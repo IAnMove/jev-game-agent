@@ -43,3 +43,8 @@ jobs:
             --mount "type=bind,source=$PWD/runs,target=/game,readonly" \
             --mount "type=bind,source=$PWD/runs,target=/app/runs" \
             jev-game-agent:local smoke --out runs/ci-smoke
+      - name: Show emulator diagnostics if integration fails
+        if: failure()
+        run: |
+          test ! -f runs/ci-smoke/emuhawk_stdout.log || tail -120 runs/ci-smoke/emuhawk_stdout.log
+          test ! -f "$BIZHAWK_DIR/EmuHawkMono_laststderr.txt" || tail -120 "$BIZHAWK_DIR/EmuHawkMono_laststderr.txt"

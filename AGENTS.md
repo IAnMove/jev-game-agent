@@ -64,6 +64,11 @@ Do not reuse SMB addresses or infer success from forward movement alone.
 Preserve others' uncommitted work. Keep changes scoped and run the relevant
 checks. Live telemetry must not advance emulator frames or make extra API calls.
 Keep execution, recorded controls and replay state checks consistent.
+Maze repeats/missed counters are navigation information, not restore triggers.
+Do not reintroduce decision-count or novelty-count resets. Physical stall recovery
+uses executed game frames (default 600; 0 disables), and timeout death restores
+the level entry. Exhausted predictions use an explicit risky choice fallback,
+rather than immediately restoring without actually playing the choice.
 CI tests Python on Windows, Linux and macOS, and the actual Linux bridge with a
 generated original test program. This does not verify gameplay on Apple Silicon
 hardware. Preserve OS/core hashes; never bypass replay checks across platforms.

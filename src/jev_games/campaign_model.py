@@ -221,8 +221,6 @@ class CampaignPlanner:
                     failure = death_reason(r, start['lives'])
                     if not self.allow_warps and rank(r) > rank(start)+1:
                         failure = 'warp_skips_levels'
-                    if area_id(r) == area_id(start) and d['x'] < start_d['x']-256:
-                        failure = 'maze_loopback'
                     airborne |= r['player_state'] != 0
                     landed = airborne and r['player_state'] == 0
                     stop = bool(failure) or not playable(r) or (name not in targets and landed and elapsed >= 12 and not r['swimming'])
@@ -287,7 +285,7 @@ def novelty_cell(state, guide=None):
     return key
 
 
-def make_request(state, forecasts, node, failures, history, visited, completed, allow_warps=False, guide=None):
+def make_request(state, forecasts, node, failures, history, visited, completed, allow_warps=False, guide=None, allow_risky=False):
     current = describe(state)
     hint = guide_context(current, guide)
     def signature(item):
@@ -297,8 +295,8 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
                      if name in forecasts and forecasts[name].get('segments')}
     eligible = {}
     for name, item in forecasts.items():
-        if (item['outcome']['eligible'] and name not in node['banned']
-                and signature(item) not in banned_inputs):
+        if (allow_risky or (item['outcome']['eligible'] and name not in node['banned']
+                and signature(item) not in banned_inputs)):
             end = item['outcome']['end']
             key = f"{end['area']}:{end['x']//32}:{end['feet_y']//32}:{end['maze_correct']}"
             item['outcome']['previous_visits_to_destination'] = visited.get(key, 0)
@@ -311,6 +309,8 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
     nearby_failures = [f for f in failures if f['from']['area'] == current['area']][-8:]
     return {'model': 'jev-latest', 'state': {
         'role': 'You are Mario campaign controller. Your choice executes immediately.',
+        'recovery_policy': 'Maze loops and missed maze counters are navigation feedback, never automatic failures. Actual death/game over restores a checkpoint. Physical stalling is measured in executed game frames, not decision count. The game timer can expire normally.',
+        'risk_fallback': 'No safe untried action remains. Choose the least harmful available maneuver; predicted danger is disclosed below. This action will actually execute instead of automatically rewinding a prediction.' if allow_risky else None,
         'objective': ('Rescue the princess in 8-4. Warp shortcuts are allowed; use a pipe to leave a warp zone. Skipped levels do not count as completed.' if allow_warps else 'Complete all 32 levels in order and rescue the princess in 8-4. Avoid warp shortcuts.')+' Optional coins have no priority.',
         'current': current, 'completed_levels': completed,
         'external_walkthrough': hint,
@@ -325,7 +325,7 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
             'Choose a coherent maneuver making progress towards completing the current area. Favor actual level/area completion, safe landing and forward progress.',
             'Learn from the provided failures: do NOT repeat the failed strategy through a different equivalent action. A short prefix flagged requires_immediate_replan is an emergency option, not a safe full crossing.',
             'Compare destination height and novelty. Escape repeated locations with a different height, timing, retreat, pipe entry or waiting for a moving obstacle.',
-            'In water, pulse A to swim upward, release to sink, steer right toward the exit pipe. In castles, different vertical routes may be necessary; maze_loopback means the route was wrong.',
+            'In water, pulse A to swim upward, release to sink, steer right toward the exit pipe. In castles, a large backward X shift can be the game repeating a maze: change corridors and keep playing. No automatic restore follows from this observation.',
             'Down enters a vertical pipe when aligned on top. Right enters a side pipe. Up climbs a vine. B fires only when fire-powered and may need repeated presses.',
             'Retreat or wait when they enable a route; do not optimize x at the cost of repeating a dead end. Prefer fewer previous visits when progress is otherwise similar.',
         ]}, 'questions': {'maneuver': {'type': 'choice',

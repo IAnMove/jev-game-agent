@@ -38,6 +38,7 @@ jobs:
         run: |
           docker run --rm --init --platform linux/amd64 \
             --env JEV_ROM=/game/ci-fixture.nes \
+            --env JEV_STARTUP_DIAGNOSTICS=1 \
             --env JEV_BIZHAWK=/emulator/EmuHawkMono.sh \
             --mount "type=bind,source=$BIZHAWK_DIR,target=/emulator" \
             --mount "type=bind,source=$PWD/runs,target=/game,readonly" \
@@ -48,3 +49,9 @@ jobs:
         run: |
           test ! -f runs/ci-smoke/emuhawk_stdout.log || tail -120 runs/ci-smoke/emuhawk_stdout.log
           test ! -f "$BIZHAWK_DIR/EmuHawkMono_laststderr.txt" || tail -120 "$BIZHAWK_DIR/EmuHawkMono_laststderr.txt"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: linux-startup-diagnostic
+          path: runs/ci-smoke/startup-display.png
+          if-no-files-found: ignore

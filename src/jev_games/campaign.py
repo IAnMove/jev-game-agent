@@ -20,6 +20,7 @@ from campaign_model import (configure, CampaignPlanner, death_reason, won, playa
 from campaign_media import finalize
 from image_ascii import attach_ascii
 from live_view import LiveView
+from recovery import StallWatch
 
 
 class DeterminismError(RuntimeError):
@@ -44,6 +45,7 @@ def campaign_backend(folder, record=False, fast=False):
 class Campaign:
     def __init__(self, args, key):
         self.args, self.key = args, key
+        self.stall_watch = StallWatch(args.stuck_frames)
         self.out = args.out.resolve()
         self.out.mkdir(parents=True, exist_ok=False)
         self.live = LiveView(self.out, key)
@@ -74,7 +76,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -269,6 +271,8 @@ class Campaign:
         self.route = self.route[:node['route_length']]
         self.history = self.history[:node['history_length']]
         self.summary['rewinds'] += 1
+        if hasattr(self, 'stall_watch'):
+            self.stall_watch.reset()
         self.event('checkpoint_restored', node=node_id, reason=reason, before=prior,
                    after=describe(self.state), timeline_frame=self.state['timeline_frame'])
         self.persist()
@@ -455,10 +459,6 @@ class Campaign:
                 if shutil.disk_usage(self.out).free < 2*1024**3:
                     self.summary['status'] = 'disk_space_limit'
                     break
-                if self.no_novelty >= 16:
-                    if not self.recover_plateau():
-                        break
-                    continue
                 if (self.chapter_events and self.summary['decisions']-self.chapter_first_decision >= self.args.chapter_decisions):
                     self.finish_chapter()
                     self.launch_player(self.nodes[self.current]['folder'])
@@ -497,9 +497,12 @@ class Campaign:
                     node['tier'] += 1
                     self.event('search_expanded', node=node['id'], tier=node['tier'])
                 if not payload['questions']['maneuver']['criteria']:
-                    if not self.backtrack('all_maneuvers_exhausted'):
-                        break
-                    continue
+                    payload = make_request(self.state, forecasts, node, self.failures,
+                        self.history, self.visited, self.summary['completed_levels'],
+                        self.args.allow_warps, self.guide, allow_risky=True)
+                    attach_ascii(payload, folder/'before.png', self.args.ascii_level, folder)
+                    write(folder/'request.json', payload)
+                    self.event('risk_fallback', reason='No safe untried candidate; continue actual play, do not rewind a prediction.')
                 self.persist()
                 api_start = time.monotonic()
                 answer = self.ask(client, payload, folder)
@@ -523,7 +526,12 @@ class Campaign:
                         self.summary['deaths'] += 1
                     snapshot(self.player, folder, 'failed', self.state)
                     self.remember_failure(node, choice, failure)
-                    self.restore(node['id'], failure)
+                    target = node
+                    if describe(self.state)['timer'] == 0 or values(self.state).get('timer_expired'):
+                        while target['parent'] and self.nodes[target['parent']]['state']['level'] == node['state']['level']:
+                            target = self.nodes[target['parent']]
+                        failure = 'game_timer_expired_restart_level'
+                    self.restore(target['id'], failure)
                     continue
                 if won(values(self.state)):
                     self.summary['completed_levels'].append('8-4')
@@ -538,13 +546,13 @@ class Campaign:
                     self.remember_failure(node, choice, 'unexpected_level_skip')
                     self.restore(node['id'], 'unexpected_level_skip')
                     continue
-                recent = self.history[-5:]+[{'to': now}]
-                stalled = (len(recent) >= 6 and all(h['to']['area'] == now['area'] for h in recent)
-                    and max(h['to']['x'] for h in recent)-min(h['to']['x'] for h in recent) < 24
-                    and max(h['to']['feet_y'] for h in recent)-min(h['to']['feet_y'] for h in recent) < 24)
+                played_frames = sum(s['frames'] for s in chosen['segments'])
+                stalled = self.stall_watch.observe(describe(old), now, played_frames)
                 if stalled:
-                    self.remember_failure(node, choice, 'stalled_at_same_position')
-                    self.restore(node['id'], 'stalled_at_same_position')
+                    self.event('physical_stall', executed_window_frames=self.args.stuck_frames,
+                               pixel_tolerance=24, state=now)
+                    if not self.recover_plateau():
+                        break
                     continue
                 level_changed = rank(new_r) > rank(old_r)
                 warped = rank(new_r) > rank(old_r)+1
@@ -648,6 +656,7 @@ def main():
     parser.add_argument('--max-input-tokens', type=int, default=8000000)
     parser.add_argument('--chapter-decisions', type=int, default=30)
     parser.add_argument('--fast', action='store_true', help='Fewer initial candidates and no shadow PNGs; same RAM parity checks, full fallback search')
+    parser.add_argument('--stuck-frames', type=int, default=600, help='Executed frames in one 24px area before stall recovery; 0 disables it')
     parser.add_argument('--resume', type=Path, help='Fork a stopped campaign; budgets remain cumulative')
     parser.add_argument('--allow-warps', action='store_true')
     parser.add_argument('--hint-file', type=Path, help='Explicit user-authorized walkthrough, scoped by level')
@@ -657,6 +666,8 @@ def main():
     parser.add_argument('--trial-level', help='Stop the experiment after leaving this level')
     parser.add_argument('--trial-decisions', type=int, default=0, help='Optional new-decision limit, excluding inherited work')
     args = parser.parse_args()
+    if args.stuck_frames < 0:
+        parser.error('stuck-frames must be nonnegative')
     if not 1 <= args.wall_seconds <= 86400 or not 1 <= args.max_decisions <= 10000 or not 1 <= args.max_rewinds <= 2000:
         parser.error('Invalid campaign bounds')
     if not 1 <= args.chapter_decisions <= 100 or args.max_input_tokens < 1:

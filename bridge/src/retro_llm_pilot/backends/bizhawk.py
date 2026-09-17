@@ -120,6 +120,12 @@ class BizHawkBackend:
         try:
             state = self.wait_ready(self.bridge_config.ready_timeout_seconds)
         except LuaBridgeTimeout as exc:
+            if os.environ.get('JEV_STARTUP_DIAGNOSTICS') == '1' and os.name != 'nt':
+                try:
+                    from PIL import ImageGrab
+                    ImageGrab.grab(xdisplay=os.environ.get('DISPLAY')).save(self.run_dir/'startup-display.png')
+                except Exception as capture_error:
+                    self._append_log(f'Startup display capture unavailable: {type(capture_error).__name__}')
             self.close()
             if _looks_like_load_failed(self.last_output):
                 return LaunchResult(status="load_failed", ok=False, error=self.last_output.strip()[-1000:] or str(exc))

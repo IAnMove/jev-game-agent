@@ -172,6 +172,17 @@ actual reason. The smoke test and unit tests have their own success status.
 
 ## Watch, stop, resume
 
+Maze repetitions and missed maze gates are navigation feedback, **not automatic
+restore triggers**. Recovery happens after actual death/game over, or after
+`--stuck-frames 600` executed frames confined to a 24-pixel area (about 12 game
+seconds for PAL). API/search waiting does not count. `--stuck-frames 0` disables
+stationary recovery. There is no decision-count or novelty-count restart.
+If all initially safe options are exhausted, the search expands; if none remain,
+Jev receives a clearly marked risky fallback instead of a preemptive rewind.
+The game timer runs normally; a timeout death restores the level entry rather
+than a checkpoint whose timer has already expired. Time/token budget stops and
+technical-error recovery remain separate from gameplay failures.
+
 For less work between moves, use `python start.py --fast` (`.\start.ps1 -Fast`
 on Windows), or add `--fast` to `jev.py play`. This tries a smaller initial
 candidate set and skips screenshots in the shadow emulator. It retains the same

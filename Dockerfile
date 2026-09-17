@@ -1,6 +1,6 @@
 FROM python:3.13-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    mono-complete libopenal1 liblua5.4-0 lsb-release libgdiplus \
+    mono-complete libopenal1 libopenal-dev liblua5.4-0 liblua5.4-dev lsb-release libgdiplus \
     libgl1-mesa-dri libgl1 libx11-6 xvfb xauth ffmpeg fonts-dejavu-core \
     procps ncurses-bin ca-certificates \
     && rm -rf /var/lib/apt/lists/*

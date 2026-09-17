@@ -13,7 +13,9 @@ from env_config import ROOT, load_env
 
 
 def docker_command(rom, emulator, runs, command, port):
+    identity = f'{os.getuid()}:{os.getgid()}' if hasattr(os, 'getuid') else '1000:1000'
     return ['docker', 'run', '--rm', '--init', '--platform', 'linux/amd64',
+            '--user', identity,
             '-p', f'127.0.0.1:{port}:{port}',
             '--env', 'TYPESAFE_API_KEY', '--env', 'JEV_CONTAINER=1',
             '--env', 'JEV_ROM=/game/game.nes', '--env', 'JEV_BIZHAWK=/emulator/EmuHawkMono.sh',

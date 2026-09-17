@@ -37,6 +37,7 @@ jobs:
       - name: Verify real bridge, checkpoint determinism and recorded video (zero API)
         run: |
           docker run --rm --init --platform linux/amd64 \
+            --user "$(id -u):$(id -g)" \
             --env JEV_ROM=/game/ci-fixture.nes \
             --env JEV_STARTUP_DIAGNOSTICS=1 \
             --env JEV_BIZHAWK=/emulator/EmuHawkMono.sh \

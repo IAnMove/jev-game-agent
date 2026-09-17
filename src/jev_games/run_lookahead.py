@@ -26,9 +26,10 @@ def backend_at(folder, record=False, fast=False):
     return backend
 
 
-def query(client, payload, folder, key, deadline, summary):
+def query(client, payload, folder, key, deadline, summary, interrupt=lambda: None):
     """Retry only API transport; the paused controller is never invoked here."""
     for attempt in range(1, 4):
+        interrupt()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError('Wall budget exhausted during API retries')
@@ -64,4 +65,7 @@ def query(client, payload, folder, key, deadline, summary):
         print(json.dumps({'event': 'api_retry', 'attempt': attempt,
                           'status_code': None if response is None else response.status_code,
                           'delay_seconds': delay}), flush=True)
-        time.sleep(min(delay, max(0, deadline-time.monotonic())))
+        pause_until = min(time.monotonic()+delay, deadline)
+        while time.monotonic() < pause_until:
+            interrupt()
+            time.sleep(min(.1, max(0, pause_until-time.monotonic())))

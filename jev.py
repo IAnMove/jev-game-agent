@@ -20,7 +20,38 @@ sys.path.insert(0, str(ROOT/'src/jev_games'))
 
 
 def viewer_handler(directory):
+    import time
+    from manual_control import validate_command
+    from run import write
+    lock = threading.Lock()
     class RunHandler(SimpleHTTPRequestHandler):
+        def do_POST(self):
+            # JSON and exact loopback origin prevent cross-site form requests
+            # and DNS rebinding. Never enable CORS for this control endpoint.
+            host = self.headers.get('Host', '')
+            origin = self.headers.get('Origin', '')
+            if (urlsplit(self.path).path != '/control' or
+                    urlsplit('http://'+host).hostname not in ('127.0.0.1', 'localhost', '::1') or
+                    origin != 'http://'+host or
+                    self.headers.get_content_type() != 'application/json'):
+                self.send_error(403, 'Local same-origin JSON only')
+                return
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 1024:
+                    raise ValueError('Invalid body size')
+                command = validate_command(json.loads(self.rfile.read(size)))
+                live = json.loads((directory/'live.json').read_text(encoding='utf-8'))
+                if live['phase'] == 'stopped' or time.time()-(directory/'live.json').stat().st_mtime > 120:
+                    self.send_error(409, 'Runner is stopped or unavailable')
+                    return
+                with lock:
+                    write(directory/'control.json', command)
+                self.send_response(204)
+                self.end_headers()
+            except (OSError, ValueError, KeyError, TypeError):
+                self.send_error(400, 'Invalid control request or run unavailable')
+
         def log_message(self, format, *args):
             if len(args) > 1 and str(args[1]) == '200':
                 return

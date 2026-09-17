@@ -17,6 +17,25 @@ def state(**updates):
 
 
 class CampaignTests(unittest.TestCase):
+    def test_actual_repeated_death_moves_before_fatal_checkpoint(self):
+        c = Campaign.__new__(Campaign)
+        c.state = {}
+        c.summary = {'decisions': 1}
+        c.failures = []
+        c.event = Mock()
+        root = {'id': 'root', 'parent': None, 'state': {'level': '1-1'}, 'banned': {}}
+        child = {'id': 'child', 'parent': 'root', 'via': 'jump', 'state': {'level': '1-1'}, 'banned': {}}
+        c.nodes = {'root': root, 'child': child}
+        segments = [{'buttons': ['right'], 'frames': 4}]
+        with patch('campaign.describe', return_value={'timer': 200}), patch('campaign.values', return_value={}):
+            self.assertEqual(c.death_checkpoint(child, 'run', 'death_routine', segments)[0]['id'], 'child')
+            # A different input is still a fresh attempt, not a decision-count reset.
+            other = [{'buttons': ['a'], 'frames': 4}]
+            self.assertEqual(c.death_checkpoint(child, 'jump', 'death_routine', other)[0]['id'], 'child')
+            target, reason = c.death_checkpoint(child, 'run', 'death_routine', segments)
+            self.assertEqual(target['id'], 'root')
+            self.assertEqual(reason, 'repeated_actual_death_move_to_parent')
+
     def test_guided_progress_is_not_penalized_for_unguided_visits(self):
         guide = {'id': 'test-guide', 'levels': {'4-4': {}}}
         with patch('campaign_model.cell', return_value='4-4:4:97:10:3:0'), patch('campaign_model.describe', return_value={'level': '4-4'}):

@@ -27,13 +27,17 @@ Run these checks without a ROM or API key:
 With local assets configured, run `jev.py doctor --config config.local.json`,
 then `jev.py smoke --config config.local.json --out runs/smoke-01`. Smoke uses
 scripted inputs and makes no API calls. A real `play` run consumes API usage;
-use explicit time, decision, restore and input-token limits as shown in README.
+use explicit time, decision, restore and input-token limits as shown in README,
+or --until-complete when the operator explicitly authorizes unbounded usage.
 Output directories must be new. Do not start a competing controller against an
 existing run. Write its `STOP` file and let it finish before resuming it.
 
 Use `--watch` during play or `jev.py watch --run runs/example --port 8768` to
 view a run locally. The browser displays confirmed emulator snapshots and
-executed controls; it is not an interactive browser emulator. A bounded stop is
+executed controls; T requests keyboard control of the same local emulator.
+Only the campaign owns bridge inputs. Do not let HTTP handlers drive the bridge.
+Manual moves must retain Human provenance, replay hashes and recording. Release
+keys on focus loss and expire input heartbeats; never silently resume Jev. A bounded stop is
 normally exit code 2. Inspect `summary.json` rather than treating every nonzero
 exit as a crash. Verify both the final victory condition and replay result before
 claiming a completed game; partial routes can also replay successfully.
@@ -50,6 +54,7 @@ claiming a completed game; partial routes can also replay successfully.
 - `campaign.py`: simulations, Jev decisions, failure memory and checkpoints.
 - `campaign_media.py`, `campaign_replay.py`: video capture and deterministic replay.
 - `live_view.py`, `campaign_watch.html`: telemetry and the browser dashboard.
+- `manual_control.py`: validated browser intent and input heartbeat expiration.
 - `image_ascii.py`, `pixel_encodings.py`: optional pixel-to-text converters.
 - `bridge/`: Python/Lua integration and text configuration, not the emulator.
 - `tests/`: synthetic tests requiring no proprietary assets or API calls.

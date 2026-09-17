@@ -172,7 +172,7 @@ class CampaignPlanner:
         self.allow_warps = allow_warps
         self.fast = fast
 
-    def forecast(self, node, state, folder, tier, deadline):
+    def forecast(self, node, state, folder, tier, deadline, interrupt=lambda: None):
         b = self.backend
         shutil.copyfile(node/'state.State', b.states_dir/'origin.State')
         origin = fingerprint(state)
@@ -189,6 +189,7 @@ class CampaignPlanner:
         targets = {f'enter_visible_pipe_{p["left"]}_{p["top"]}': p for p in pipes(state)}
         library.update({name: None for name in targets})
         for name, plan in library.items():
+            interrupt()
             if time.monotonic() >= deadline:
                 raise TimeoutError('Campaign budget reached')
             current = b.load_state_named('origin', neutralize_framebuffer=False)
@@ -208,6 +209,7 @@ class CampaignPlanner:
             for part in parts():
                 remaining = part['frames']
                 while remaining:
+                    interrupt()
                     if time.monotonic() >= deadline:
                         raise TimeoutError('Campaign budget reached')
                     segment = {'buttons': part['buttons'], 'frames': min(4, remaining)}

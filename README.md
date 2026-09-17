@@ -177,6 +177,9 @@ restore triggers**. Recovery happens after actual death/game over, or after
 `--stuck-frames 600` executed frames confined to a 24-pixel area (about 12 game
 seconds for PAL). API/search waiting does not count. `--stuck-frames 0` disables
 stationary recovery. There is no decision-count or novelty-count restart.
+If the same checkpoint and identical executed inputs produce the same actual
+death again, recovery moves to the parent checkpoint to escape the fatal branch;
+a predicted death or maze repetition alone does not trigger this recovery.
 If all initially safe options are exhausted, the search expands; if none remain,
 Jev receives a clearly marked risky fallback instead of a preemptive rewind.
 The game timer runs normally; a timeout death restores the level entry rather
@@ -204,8 +207,37 @@ Use `--no-open` to print the URL without automatically opening a browser.
 The dashboard shows the recorded emulator's latest confirmed screenshot, a
 controller highlighting the executed buttons, the current phase (simulation,
 API wait, execution or restore), exact requests/responses, RAM state, confidence,
-latency, token usage and a rolling event console. It does not send controller
-input from the browser or reveal a private model reasoning trace.
+latency, token usage and a rolling event console. Properties appear as labeled fields and expandable sections; confidence and
+candidate probabilities have percentage bars. Raw JSON remains available.
+This does not expose a private model reasoning trace.
+
+**Press T to take control, then T again to return to Jev.** Use arrow keys to move,
+Enter for Start, Space for Select, A for NES A (jump), and S for NES B (run/fire).
+Keep the page focused. The status distinguishes a requested handoff from actual
+human control. Search yields between simulation segments; a current HTTP request
+may finish first (up to its 20-second request timeout). A running controller macro
+finishes before handing off. Jev never executes a stale choice after a takeover.
+
+Manual inputs drive the same recorded emulator and are labeled **Human** in the
+logs and video. Returning to Jev saves the actual state and recomputes its options;
+human-assisted routes are not unaided Jev runs. Losing focus releases buttons;
+a missing browser heartbeat pauses manual play after 1.5 seconds. T explicitly
+returns control. Open one control page per run. The viewer has a local, same-origin
+JSON control endpoint; do not expose its port to the internet.
+
+To remove the time, decision, restore and reported-token caps, explicitly use:
+
+```sh
+python start.py --until-complete
+# Windows PowerShell: .\start.ps1 -UntilComplete
+# Also accepted by jev.py play, including with --resume
+```
+
+This mode keeps consuming API usage until verified victory or a STOP file. It
+continues retrying temporary API outages without advancing the game. Disk-space
+checks, invalid credentials, replay divergence and persistent infrastructure
+failures can still stop a run; unlimited attempts do not guarantee completion.
+The ordinary launcher retains its 10-minute bound. Recordings continue in chapters.
 
 This is a view of the local native emulator, not a WebAssembly emulator. Images
 update at acknowledged input segments (usually four frames); the browser polls

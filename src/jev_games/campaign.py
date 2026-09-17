@@ -21,6 +21,7 @@ from campaign_media import finalize
 from image_ascii import attach_ascii
 from live_view import LiveView
 from recovery import StallWatch
+from manual_control import ManualControl, ManualRequested
 
 
 class DeterminismError(RuntimeError):
@@ -49,12 +50,13 @@ class Campaign:
         self.out = args.out.resolve()
         self.out.mkdir(parents=True, exist_ok=False)
         self.live = LiveView(self.out, key)
+        self.control = ManualControl(self.out)
         self.guide = read(args.hint_file) if args.hint_file else None
         if self.guide:
             write(self.out/'external_guide.json', self.guide)
         self.rom = ROM
         self.started = time.monotonic()
-        self.deadline = self.started+args.wall_seconds
+        self.deadline = float('inf') if args.until_complete else self.started+args.wall_seconds
         self.player = self.shadow = None
         self.state = None
         self.chapter = None
@@ -76,7 +78,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -148,8 +150,10 @@ class Campaign:
         store = read(source/'checkpoint_store.json')
         self.summary.update(read(source/'summary.json'))
         self.summary.update(status='resuming', resumed_from=str(source))
+        self.summary.pop('error', None)
+        self.summary.pop('video_error', None)
         self.inherited_wall = self.summary['wall_seconds']
-        self.deadline = self.started+max(0, self.args.wall_seconds-self.inherited_wall)
+        self.deadline = float('inf') if self.args.until_complete else self.started+max(0, self.args.wall_seconds-self.inherited_wall)
         self.nodes, self.current = store['nodes'], store['current_node']
         self.route, self.failures, self.visited = store['route'], store['failures'], store['visited']
         for node in self.nodes.values():
@@ -295,6 +299,24 @@ class Campaign:
         self.restore(parent['id'], reason)
         return True
 
+    def death_checkpoint(self, node, choice, failure, segments):
+        previous = node['banned'].get(choice, {})
+        repeated = previous.get('executed_segments') == segments and previous.get('reason') == failure
+        self.remember_failure(node, choice, failure)
+        node['banned'][choice]['executed_segments'] = segments
+        target = node
+        if describe(self.state)['timer'] == 0 or values(self.state).get('timer_expired'):
+            while target['parent'] and self.nodes[target['parent']]['state']['level'] == node['state']['level']:
+                target = self.nodes[target['parent']]
+            failure = 'game_timer_expired_restart_level'
+        elif repeated and node['parent']:
+            # Same checkpoint + same inputs + same actual death is a replay,
+            # not a fresh attempt. Move before the committed fatal branch.
+            target = self.nodes[node['parent']]
+            self.remember_failure(target, node['via'], 'repeated_actual_death_from_child')
+            failure = 'repeated_actual_death_move_to_parent'
+        return target, failure
+
     def recover_plateau(self):
         """Discard a spatial branch, not hundreds of timer/velocity variants."""
         start = self.nodes[self.current]
@@ -315,6 +337,9 @@ class Campaign:
                 return True
             child = parent
         self.summary['status'] = 'search_exhausted'
+        if getattr(getattr(self, 'args', None), 'until_complete', False):
+            self.restore(start['id'], 'physical_stall_at_level_entry')
+            return True
         return False
 
     def move(self, segments, action, controller, expected=None):
@@ -332,7 +357,7 @@ class Campaign:
         baseline_lives = values(before)['lives']
         for i, segment in enumerate(segments):
             self.state = issue(self.player, segment)
-            self.publish_live('executing', buttons=segment['buttons'], action=action,
+            self.publish_live('human' if controller == 'Human' else 'executing', buttons=segment['buttons'], action=action,
                 controller=controller, segment_frames=segment['frames'], move=move_id)
             actual.append(segment)
             digest = fingerprint(self.state)
@@ -358,13 +383,15 @@ class Campaign:
             'segments': actual, 'trajectory': trace, 'before_ram_sha256': fingerprint(before),
             'after_ram_sha256': fingerprint(self.state)})
         self.event('move', **event)
-        self.publish_live('ready', event='move_completed', action=action, controller=controller,
+        self.publish_live('human' if controller == 'Human' else 'ready', buttons=actual[-1]['buttons'] if controller == 'Human' and actual else (), event='move_completed', action=action, controller=controller,
             frames=sum(s['frames'] for s in actual))
         return death_reason(values(self.state), baseline_lives)
 
     def transition(self):
         elapsed = 0
         while not playable(values(self.state)) and not won(values(self.state)):
+            if self.control.read()[0] == 'human' or (self.out/'STOP').exists():
+                return None
             if time.monotonic() >= self.deadline:
                 raise TimeoutError('Campaign wall budget reached')
             failure = death_reason(values(self.state))
@@ -383,14 +410,16 @@ class Campaign:
     def ask(self, client, payload, folder):
         self.publish_live('waiting_for_jev', event='request_sent',
             request_url=str((folder/'request.json').relative_to(self.out)).replace('\\', '/'))
-        outage_deadline = min(self.deadline, time.monotonic()+900)
-        for batch in range(1, 100):
+        outage_deadline = self.deadline if self.args.until_complete else min(self.deadline, time.monotonic()+900)
+        import itertools
+        for batch in itertools.count(1):
+            self.control.check()
             if time.monotonic() >= outage_deadline:
                 raise TimeoutError('API unavailable beyond bounded recovery window')
             http_folder = folder/f'http_{batch:03d}'
             http_folder.mkdir()
             try:
-                code, body, latency = query(client, payload, http_folder, self.key, outage_deadline, self.summary)
+                code, body, latency = query(client, payload, http_folder, self.key, outage_deadline, self.summary, interrupt=self.control.check)
                 if code == 200:
                     answer = json.loads(body)
                     write(folder/'response.json', answer)
@@ -411,8 +440,14 @@ class Campaign:
                 reason = type(exc).__name__
             self.summary['status'] = 'waiting_for_api'
             self.event('api_wait', reason=reason, decision=self.summary['decisions'], round=batch)
+            self.publish_live('waiting_for_jev', event='api_wait', reason=reason)
             self.persist()
-            time.sleep(min(30, max(0, outage_deadline-time.monotonic())))
+            pause_until = min(time.monotonic()+30, outage_deadline)
+            while time.monotonic() < pause_until:
+                self.control.check()
+                if (self.out/'STOP').exists():
+                    return None
+                time.sleep(.1)
         raise RuntimeError('API recovery attempts exhausted')
 
     def export_route(self):
@@ -421,6 +456,80 @@ class Campaign:
             'status': self.summary['status'], 'completed_levels': self.summary['completed_levels'],
             'watches': WATCH, 'rom_sha256': hashlib.sha256(self.rom.read_bytes()).hexdigest(),
             'engine_hashes': read(self.out/'manifest.json').get('engine_hashes', {})})
+
+    def human_play(self):
+        """Use the same recorded player and route; no API or shadow inputs."""
+        if self.control.read()[0] != 'human':
+            return False
+        self.summary['human_interventions'] = self.summary.get('human_interventions', 0)+1
+        self.event('control_changed', controller='Human', state=describe(self.state))
+        self.publish_live('human', event='control_changed', controller='Human')
+        self.stall_watch.reset()
+        checkpoint_frame = self.state['timeline_frame']
+        initial = describe(self.state)
+        try:
+            while self.control.read()[0] == 'human':
+                if (self.out/'STOP').exists() or time.monotonic() >= self.deadline:
+                    break
+                if shutil.disk_usage(self.out).free < 2*1024**3:
+                    self.summary['status'] = 'disk_space_limit'
+                    break
+                mode, buttons, fresh = self.control.read()
+                if mode != 'human':
+                    break
+                if not fresh:
+                    self.publish_live('human', controller='Human', reason='Browser disconnected: inputs released, game paused')
+                    time.sleep(.1)
+                    continue
+                started = time.monotonic()
+                old = self.state
+                failure = self.move([{'buttons': buttons, 'frames': 4}], 'manual_input', 'Human')
+                if failure:
+                    self.summary['deaths'] += 1
+                    target = self.nodes[self.current]
+                    if describe(self.state)['timer'] == 0 or values(self.state).get('timer_expired'):
+                        while target['parent'] and self.nodes[target['parent']]['state']['level'] == target['state']['level']:
+                            target = self.nodes[target['parent']]
+                    self.event('human_death', reason=failure)
+                    self.restore(target['id'], 'human_death: '+failure)
+                    checkpoint_frame = self.state['timeline_frame']
+                elif won(values(self.state)):
+                    if '8-4' not in self.summary['completed_levels']:
+                        self.summary['completed_levels'].append('8-4')
+                    self.summary['status'] = 'game_completed_with_checkpoints'
+                    snapshot(self.player, self.out, 'victory', self.state)
+                    self.player.save_state_named('victory')
+                    self.event('game_completed', controller='Human', proof=describe(self.state), ram=values(self.state))
+                    return True
+                elif rank(values(self.state)) > rank(values(old)):
+                    if rank(values(self.state)) == rank(values(old))+1:
+                        level = level_id(values(old))
+                        if level not in self.summary['completed_levels']:
+                            self.summary['completed_levels'].append(level)
+                        self.event('level_completed', level=level, controller='Human')
+                    else:
+                        warp = {'from': level_id(values(old)), 'to': level_id(values(self.state)), 'controller': 'Human'}
+                        self.summary.setdefault('warps_used', []).append(warp)
+                        self.event('warp_used', **warp)
+                if self.state['timeline_frame']-checkpoint_frame >= 100 and playable(values(self.state)):
+                    self.history.append({'from': initial, 'action': 'Human keyboard input', 'to': describe(self.state)})
+                    self.checkpoint(parent=self.current, via='Human keyboard input')
+                    initial = describe(self.state)
+                    checkpoint_frame = self.state['timeline_frame']
+                if self.state['timeline_frame']-self.chapter_start >= 3000:
+                    self.checkpoint(parent=self.current, via='Human keyboard input')
+                    self.finish_chapter()
+                    self.launch_player(self.nodes[self.current]['folder'])
+                    checkpoint_frame = self.state['timeline_frame']
+                time.sleep(max(0, .08-(time.monotonic()-started)))
+        finally:
+            self.history.append({'from': initial, 'action': 'Human keyboard input; resume from this actual state', 'to': describe(self.state)})
+            self.checkpoint(parent=self.current, via='Human keyboard input')
+            self.export_route()
+            self.stall_watch.reset()
+            self.event('control_changed', controller='Jev', state=describe(self.state))
+            self.publish_live('ready', event='control_changed', controller='Jev')
+        return False
 
     def play(self):
         self.launch_player(self.nodes[self.current]['folder'] if self.current else None)
@@ -441,19 +550,24 @@ class Campaign:
                 if (self.out/'STOP').exists():
                     self.summary['status'] = 'user_stop_file'
                     break
+                if self.human_play():
+                    break
+                if (self.out/'STOP').exists():
+                    self.summary['status'] = 'user_stop_file'
+                    break
                 if self.args.trial_level and level_id(values(self.state)) != self.args.trial_level:
                     self.summary['status'] = ('trial_level_completed' if self.args.trial_level in self.summary['completed_levels'] else 'trial_scope_exited')
                     break
                 if self.args.trial_decisions and self.summary['decisions']-self.trial_start_decision >= self.args.trial_decisions:
                     self.summary['status'] = 'trial_decision_limit'
                     break
-                if self.summary['decisions'] >= self.args.max_decisions:
+                if not self.args.until_complete and self.summary['decisions'] >= self.args.max_decisions:
                     self.summary['status'] = 'decision_limit'
                     break
-                if self.summary['rewinds'] >= self.args.max_rewinds:
+                if not self.args.until_complete and self.summary['rewinds'] >= self.args.max_rewinds:
                     self.summary['status'] = 'rewind_limit'
                     break
-                if self.summary['input_tokens'] >= self.args.max_input_tokens:
+                if not self.args.until_complete and self.summary['input_tokens'] >= self.args.max_input_tokens:
                     self.summary['status'] = 'token_limit'
                     break
                 if shutil.disk_usage(self.out).free < 2*1024**3:
@@ -482,8 +596,12 @@ class Campaign:
                         write(folder/'forecasts.json', forecasts)
                     else:
                         t0 = time.monotonic()
-                        forecasts = CampaignPlanner(self.shadow, self.args.allow_warps, fast=self.args.fast).forecast(Path(node['folder']), self.state,
-                            folder, node['tier'], self.deadline)
+                        try:
+                            forecasts = CampaignPlanner(self.shadow, self.args.allow_warps, fast=self.args.fast).forecast(Path(node['folder']), self.state,
+                                folder, node['tier'], self.deadline, interrupt=self.control.check)
+                        except ManualRequested:
+                            forecasts = None
+                            break
                         elapsed = time.monotonic()-t0
                         search_seconds += elapsed
                         self.summary['forecast_seconds'] += elapsed
@@ -496,6 +614,8 @@ class Campaign:
                         break
                     node['tier'] += 1
                     self.event('search_expanded', node=node['id'], tier=node['tier'])
+                if forecasts is None or self.control.read()[0] == 'human':
+                    continue
                 if not payload['questions']['maneuver']['criteria']:
                     payload = make_request(self.state, forecasts, node, self.failures,
                         self.history, self.visited, self.summary['completed_levels'],
@@ -505,7 +625,13 @@ class Campaign:
                     self.event('risk_fallback', reason='No safe untried candidate; continue actual play, do not rewind a prediction.')
                 self.persist()
                 api_start = time.monotonic()
-                answer = self.ask(client, payload, folder)
+                try:
+                    answer = self.ask(client, payload, folder)
+                except ManualRequested:
+                    continue
+                if answer is None or self.control.read()[0] == 'human' or (self.out/'STOP').exists():
+                    self.event('decision_discarded', reason='Control handoff or stop; no model inputs executed')
+                    continue
                 api_seconds = time.monotonic()-api_start
                 choice = answer['answers']['maneuver']['choice']
                 if choice not in payload['questions']['maneuver']['criteria']:
@@ -525,12 +651,7 @@ class Campaign:
                     if death_reason(values(self.state), values(old)['lives']):
                         self.summary['deaths'] += 1
                     snapshot(self.player, folder, 'failed', self.state)
-                    self.remember_failure(node, choice, failure)
-                    target = node
-                    if describe(self.state)['timer'] == 0 or values(self.state).get('timer_expired'):
-                        while target['parent'] and self.nodes[target['parent']]['state']['level'] == node['state']['level']:
-                            target = self.nodes[target['parent']]
-                        failure = 'game_timer_expired_restart_level'
+                    target, failure = self.death_checkpoint(node, choice, failure, chosen['segments'])
                     self.restore(target['id'], failure)
                     continue
                 if won(values(self.state)):
@@ -650,6 +771,7 @@ class Campaign:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--until-complete', action='store_true', help='No time/decision/restore/token cap; continue API outage retries until victory or STOP (usage continues)')
     parser.add_argument('--wall-seconds', type=float, default=28800)
     parser.add_argument('--max-decisions', type=int, default=2000)
     parser.add_argument('--max-rewinds', type=int, default=500)

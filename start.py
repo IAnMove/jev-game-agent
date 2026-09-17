@@ -29,6 +29,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--container', action='store_true', help='Run the Linux x64 emulator through Docker')
     parser.add_argument('--fast', action='store_true', help='Reduce initial lookahead work; may choose different moves')
+    parser.add_argument('--until-complete', action='store_true', help='Continue until victory or STOP without usage/time caps')
     parser.add_argument('--stuck-frames', type=int, default=600, help='Stationary game frames before recovery; 0 disables this trigger')
     parser.add_argument('--smoke', action='store_true', help='Check real emulator and recording without API calls')
     parser.add_argument('--port', type=int, default=8768)
@@ -65,6 +66,8 @@ def main():
         parser.error('Output directory must be new')
     command = ['smoke' if args.smoke else 'play', '--out', f'runs/{name}']
     if not args.smoke:
+        if args.until_complete:
+            command += ['--until-complete']
         if args.fast:
             command += ['--fast']
         command += ['--stuck-frames', str(args.stuck_frames), '--watch', '--port', str(args.port), '--allow-warps', '--wall-seconds', '600',

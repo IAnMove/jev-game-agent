@@ -30,13 +30,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bizhawk"
           curl --fail --location --retry 3 https://github.com/TASEmulators/BizHawk/releases/download/2.11.1/BizHawk-2.11.1-linux-x64.tar.gz -o "$RUNNER_TEMP/bizhawk.tar.gz"
           tar -xzf "$RUNNER_TEMP/bizhawk.tar.gz" -C "$RUNNER_TEMP/bizhawk"
+          launcher="$(find "$RUNNER_TEMP/bizhawk" -name EmuHawkMono.sh -print -quit)"
+          test -n "$launcher"
+          echo "BIZHAWK_DIR=$(dirname "$launcher")" >> "$GITHUB_ENV"
           python tools/smoke_fixture.py
       - name: Verify real bridge, checkpoint determinism and recorded video (zero API)
         run: |
           docker run --rm --init --platform linux/amd64 \
             --env JEV_ROM=/game/ci-fixture.nes \
             --env JEV_BIZHAWK=/emulator/EmuHawkMono.sh \
-            --mount "type=bind,source=$RUNNER_TEMP/bizhawk,target=/emulator" \
+            --mount "type=bind,source=$BIZHAWK_DIR,target=/emulator" \
             --mount "type=bind,source=$PWD/runs,target=/game,readonly" \
             --mount "type=bind,source=$PWD/runs,target=/app/runs" \
             jev-game-agent:local smoke --out runs/ci-smoke

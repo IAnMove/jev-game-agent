@@ -17,8 +17,8 @@ class EnvironmentTests(unittest.TestCase):
             path.write_text('TYPESAFE_API_KEY="file-value"\nJEV_ROM="my games/game.nes"\nJEV_BIZHAWK=tools/EmuHawkMono.sh\n', encoding='utf-8')
             load_env(path)
             self.assertEqual(os.environ['TYPESAFE_API_KEY'], 'existing')
-            self.assertEqual(Path(os.environ['JEV_ROM']), Path(folder)/'my games/game.nes')
-            self.assertEqual(Path(os.environ['JEV_BIZHAWK']), Path(folder)/'tools/EmuHawkMono.sh')
+            self.assertEqual(Path(os.environ['JEV_ROM']), (Path(folder)/'my games/game.nes').resolve())
+            self.assertEqual(Path(os.environ['JEV_BIZHAWK']), (Path(folder)/'tools/EmuHawkMono.sh').resolve())
 
     def test_env_never_expands_shell_or_interpolates_secrets(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):

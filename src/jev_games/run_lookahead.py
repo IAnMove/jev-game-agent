@@ -15,12 +15,13 @@ from run import ROOT, ENGINE, WATCH, ReliableBackend, LuaBridgeConfig, observe, 
 from lookahead import ShadowPlanner, compact, dead, fingerprint, request
 
 
-def backend_at(folder, record=False):
+def backend_at(folder, record=False, fast=False):
     backend = ReliableBackend(EMULATOR, ENGINE, folder,
         LuaBridgeConfig(script_path='scripts/bizhawk_bridge.lua', boot_frames=120,
                        ready_timeout_seconds=30, timeout_seconds=15, poll_interval_seconds=0.01),
         config_template=ENGINE / 'data/bizhawk_search_config_template.ini',
         record={'enabled': record, 'writer': 'nut', 'container': 'nut'})
+    backend.skip_screenshots = bool(fast and not record)
     backend.write_ram_watch({k: f'0x{v:04x},System Bus' for k, v in WATCH.items()})
     return backend
 

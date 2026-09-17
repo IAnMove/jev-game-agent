@@ -29,6 +29,39 @@ state and predicted outcomes. The program generates candidates, filters detected
 fatal outcomes and remembers failed branches. Recordings show emulator time,
 not the wall-clock delay of the API or search.
 
+## Platforms
+
+| Host | Runtime |
+| --- | --- |
+| Windows x64 | Native BizHawk `EmuHawk.exe` |
+| Linux x64 | Native `EmuHawkMono.sh`, Mono and a desktop display |
+| macOS Intel / Apple Silicon | Linux x64 through Docker Desktop; viewer in the Mac browser |
+
+BizHawk 2.11.1 has no current native macOS build. The Mac launcher uses a
+`linux/amd64` container, including on Apple Silicon, where architecture emulation
+can be slower. Python tests run on all three OSes; the container bridge is tested
+on Linux x64. Apple Silicon hardware performance is not verified. See the
+[upstream requirements](https://github.com/TASEmulators/BizHawk/tree/2.11.1#installing).
+
+## Local configuration: .env
+
+Copy `.env.example` to `.env` and fill in your own three settings:
+
+```dotenv
+TYPESAFE_API_KEY=your-key
+JEV_ROM="/absolute/path/to/your/game.nes"
+JEV_BIZHAWK="/absolute/path/to/BizHawk/EmuHawkMono.sh"
+```
+
+On Windows use `EmuHawk.exe`, for example
+`JEV_BIZHAWK="C:/emulators/BizHawk/EmuHawk.exe"`. Spaces and literal backslashes
+are supported. Relative paths resolve from the `.env` directory. The parser
+does not evaluate shell commands or interpolate variables.
+
+**`.env` is ignored by Git and Docker builds.** Only the empty `.env.example`
+is published. Precedence is CLI flags, optional JSON config, existing environment,
+then `.env`. Keep the complete emulator folder together, including `dll`.
+
 ## Quick start — Windows
 
 1. Install **Python 3.11+** with the `py` launcher.
@@ -49,9 +82,8 @@ Clone this repository, open PowerShell in its folder, then run:
 ```
 
 The launcher creates a local virtual environment, installs Python dependencies,
-asks for the two asset paths, checks prerequisites and prompts for the API key
-with hidden input. It does not save the key. If your machine blocks PowerShell
-scripts, use the manual Python commands below instead of changing system policy.
+loads `.env` and prompts for missing values (API input is hidden and not saved).
+You can also run `py -3 start.py` if PowerShell scripts are blocked.
 
 The launcher opens the live dashboard in your browser. If port 8768 is already
 in use, run `.\start.ps1 -Port 8771` instead. After a bounded run ends, the
@@ -62,6 +94,48 @@ The first run is bounded to **10 minutes, 100 decision cycles, 100 restores and
 stop conditions, not an estimated price or a success guarantee. A request already
 in progress can take usage past a threshold. Local simulation can take longer
 than the model response.
+
+## Quick start — Linux
+
+Install Python 3.11+ with venv support, FFmpeg/FFprobe with ASS, and BizHawk's
+Linux dependencies: Mono complete, OpenAL, Lua 5.4 and `lsb_release`. Download
+the **Linux x64** BizHawk release, fill `.env` with its `EmuHawkMono.sh` path,
+and run from a graphical desktop session:
+
+```sh
+python3 start.py
+# Or: sh start.sh
+```
+
+Use the Docker option below for headless machines. A fresh native manual setup
+uses `python3 -m venv .venv`, `. .venv/bin/activate`, then
+`python -m pip install -r requirements.txt`. The `jev.py` commands below are
+identical on Linux when using `.venv/bin/python` instead of the Windows path.
+
+## Quick start — macOS / Docker
+
+Install Python 3.11+ and start Docker Desktop. Download and extract the **Linux
+x64** BizHawk release on your Mac; set `JEV_BIZHAWK` to its `EmuHawkMono.sh` in
+`.env`, not to a Windows executable or legacy Mac build. Then run:
+
+```sh
+python3 start.py
+```
+
+macOS selects Docker automatically. `python start.py --container` enables the
+same mode on Windows/Linux. The image installs Mono, FFmpeg and a virtual display;
+no host X server or Mono is required. It includes neither your game nor emulator.
+The game is mounted read-only; the separately mounted emulator folder must be
+writable. `runs/` persists on the host. The API key is passed through the runtime
+environment, never in a build argument or literal Docker command argument.
+
+The viewer is published only on host loopback. Refresh the browser if the
+container is still starting; use `--port 8771` if the default port is occupied.
+Allow Docker access to your selected local folders if requested by Docker Desktop.
+Use `--out my-run` to choose the new output folder `runs/my-run`.
+
+On any platform, `python start.py --smoke` verifies the emulator, checkpoint
+determinism and video recording with **zero API calls**. Use `python3` on Unix.
 
 ## Manual setup and a free local smoke test
 
@@ -86,8 +160,7 @@ an iNES header but cannot prove that a file is the correct game or revision.
 compares RAM and verifies a short MP4 with audio. **It makes zero API calls.**
 Its control inputs are scripted test inputs, not decisions by Jev.
 
-For a Jev run, set `TYPESAFE_API_KEY` in the process environment (the interactive
-launcher does this without echoing the key), then:
+For a Jev run, configure `TYPESAFE_API_KEY` in `.env` or the environment, then:
 
 ```powershell
 .\.venv\Scripts\python.exe jev.py play --config config.local.json --out runs/first-play --allow-warps --wall-seconds 600 --max-decisions 100 --max-rewinds 100 --max-input-tokens 500000
@@ -98,6 +171,17 @@ only a verified campaign victory exits with code 0. Read `summary.json` for the
 actual reason. The smoke test and unit tests have their own success status.
 
 ## Watch, stop, resume
+
+For less work between moves, use `python start.py --fast` (`.\start.ps1 -Fast`
+on Windows), or add `--fast` to `jev.py play`. This tries a smaller initial
+candidate set and skips screenshots in the shadow emulator. It retains the same
+four-frame RAM checks, predicted-death filtering, coasting horizon, recorded-player
+images and full search expansion when the initial options are exhausted.
+It can choose different moves and miss useful initial alternatives. It is **not
+a real-time guarantee**: simulation, file I/O and API waits still pause gameplay.
+Per-decision `timing.json` separates search, API and total time through execution.
+The default retains the full initial search. Recordings/replay play at game speed;
+that playback speed should not be described as live decision speed.
 
 To launch play and its browser view together, add `--watch` to the play command:
 
@@ -149,6 +233,9 @@ The current bounded operation finishes before video is finalized. To continue a
 Local runs retain complete checkpoints and may use substantial disk space.
 Keep the source run accessible for inherited video links. Paths in archived run
 metadata are currently local absolute paths: moving a run is not yet portable.
+Do not transfer checkpoints between OSes, container/native modes or emulator
+builds. Core hashes differ and must not be bypassed. Advanced container resume
+and replay use the same CLI arguments with the original mounts and internal paths.
 
 ## What is recorded
 
@@ -200,7 +287,11 @@ development instructions.
 .\.venv\Scripts\python.exe tools/check_release.py
 ```
 
-Tests use synthetic state and images; no ROM or API key is needed. The release
+Tests use synthetic state and images; no ROM or API key is needed. CI also runs
+the real Linux emulator against an original minimal test program generated at
+runtime, with no proprietary game or API usage. That CI check downloads BizHawk
+from its official release; the normal launcher does not download emulators.
+The release
 check inspects tracked and unignored files for forbidden assets, binaries and
 likely secrets. Local generated runs stay ignored. Do not force-add them.
 

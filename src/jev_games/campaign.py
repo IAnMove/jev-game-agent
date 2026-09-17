@@ -1,4 +1,4 @@
-from runtime import ROM, EMULATOR
+from runtime import ROM, EMULATOR, engine_files
 """Autonomous, bounded Jev campaign with backtracking and incremental videos."""
 import argparse
 from datetime import datetime, timezone
@@ -34,8 +34,8 @@ def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
 
 
-def campaign_backend(folder, record=False):
-    backend = backend_at(folder, record)
+def campaign_backend(folder, record=False, fast=False):
+    backend = backend_at(folder, record, fast=fast)
     backend.write_ram_watch({k: f'0x{v:04x},System Bus'
                              for k, v in (WATCH | {'warp_zone': 0x6d6}).items()})
     return backend
@@ -87,9 +87,9 @@ class Campaign:
             'rom': str(self.rom), 'rom_sha256': hashlib.sha256(self.rom.read_bytes()).hexdigest(),
             'emulator_sha256': hashlib.sha256((EMULATOR).read_bytes()).hexdigest(),
             'config_sha256': hashlib.sha256((ENGINE/'data/bizhawk_search_config_template.ini').read_bytes()).hexdigest(),
-            'engine_hashes': {name: hashlib.sha256((EMULATOR.parent/'dll'/name).read_bytes()).hexdigest()
-                for name in ('BizHawk.Emulation.Cores.dll', 'BizHawk.Emulation.Common.dll', 'libquicknes.dll')},
-            'source_sha256': hashes, 'watches': WATCH,
+            'engine_hashes': {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                              for name, path in engine_files().items()},
+            'source_sha256': hashes, 'watches': WATCH, 'fast_search': args.fast,
             'bounds': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, 'api_key_logged': False,
             'supplementary_watch': {'warp_zone': 0x6d6},
             'external_guide': self.guide,
@@ -135,6 +135,7 @@ class Campaign:
         previous = read(source/'manifest.json')
         current = read(self.out/'manifest.json')
         same_policy = (previous.get('policy') == current['policy']
+                       and previous.get('fast_search', False) == current['fast_search']
                        and previous.get('objective') == current['objective']
                        and previous.get('external_guide') == self.guide
                        and all(previous.get('source_sha256', {}).get(name) == current['source_sha256'][name]
@@ -425,7 +426,7 @@ class Campaign:
                        from_node=self.current, to_node=self.args.resume_node)
             self.restore(self.args.resume_node, self.args.resume_reason)
             self.args.resume_node = None
-        self.shadow = campaign_backend(self.out/'shadow_runs'/f"{self.summary['technical_restarts']:03d}")
+        self.shadow = campaign_backend(self.out/'shadow_runs'/f"{self.summary['technical_restarts']:03d}", fast=self.args.fast)
         result = self.shadow.launch(self.rom)
         if not result.ok:
             raise RuntimeError(result.error)
@@ -468,19 +469,24 @@ class Campaign:
                 decision = self.summary['decisions']
                 folder = self.out/'decisions'/f'{decision:06d}'
                 folder.mkdir(parents=True)
+                cycle_start = time.monotonic()
+                search_seconds = 0.0
                 self.publish_live('simulating', event='search_started', tier=node['tier'])
                 snapshot(self.player, folder, 'before', self.state)
                 shutil.copyfile(folder/'before.png', self.out/'latest.png')
                 while True:
-                    cache = Path(node['folder'])/f"forecast_tier_{node['tier']}.json"
+                    profile = 'fast' if self.args.fast else 'full'
+                    cache = Path(node['folder'])/f"forecast_{profile}_tier_{node['tier']}.json"
                     if cache.exists():
                         forecasts = read(cache)
                         write(folder/'forecasts.json', forecasts)
                     else:
                         t0 = time.monotonic()
-                        forecasts = CampaignPlanner(self.shadow, self.args.allow_warps).forecast(Path(node['folder']), self.state,
+                        forecasts = CampaignPlanner(self.shadow, self.args.allow_warps, fast=self.args.fast).forecast(Path(node['folder']), self.state,
                             folder, node['tier'], self.deadline)
-                        self.summary['forecast_seconds'] += time.monotonic()-t0
+                        elapsed = time.monotonic()-t0
+                        search_seconds += elapsed
+                        self.summary['forecast_seconds'] += elapsed
                         write(cache, forecasts)
                     payload = make_request(self.state, forecasts, node, self.failures,
                         self.history, self.visited, self.summary['completed_levels'], self.args.allow_warps, self.guide)
@@ -495,7 +501,9 @@ class Campaign:
                         break
                     continue
                 self.persist()
+                api_start = time.monotonic()
                 answer = self.ask(client, payload, folder)
+                api_seconds = time.monotonic()-api_start
                 choice = answer['answers']['maneuver']['choice']
                 if choice not in payload['questions']['maneuver']['criteria']:
                     raise NonretryableAPIError('Invalid Jev choice')
@@ -506,6 +514,10 @@ class Campaign:
                     'Jev+ASCII' if 'screen_ascii' in payload['state'] else 'Jev', chosen['trajectory'])
                 if not failure:
                     failure = self.transition()
+                write(folder/'timing.json', {'profile': profile, 'search_seconds': search_seconds,
+                    'api_seconds': api_seconds, 'cycle_seconds_through_execution': time.monotonic()-cycle_start,
+                    'candidates': len(forecasts), 'executed_frames': sum(s['frames'] for s in chosen['segments']),
+                    'failure': failure})
                 if failure:
                     if death_reason(values(self.state), values(old)['lives']):
                         self.summary['deaths'] += 1
@@ -635,6 +647,7 @@ def main():
     parser.add_argument('--max-rewinds', type=int, default=500)
     parser.add_argument('--max-input-tokens', type=int, default=8000000)
     parser.add_argument('--chapter-decisions', type=int, default=30)
+    parser.add_argument('--fast', action='store_true', help='Fewer initial candidates and no shadow PNGs; same RAM parity checks, full fallback search')
     parser.add_argument('--resume', type=Path, help='Fork a stopped campaign; budgets remain cumulative')
     parser.add_argument('--allow-warps', action='store_true')
     parser.add_argument('--hint-file', type=Path, help='Explicit user-authorized walkthrough, scoped by level')

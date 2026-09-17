@@ -62,8 +62,11 @@ def attach_ascii(payload, image_path, allowed_level, artifact_dir=None):
 
 def preview(image_path, result, output):
     """Render a review artifact; it is not sent as an image to Jev."""
-    font = ImageFont.truetype('C:/Windows/Fonts/consola.ttf', 14)
-    label = ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 18)
+    try:
+        font = ImageFont.truetype('DejaVuSansMono.ttf', 14)
+    except OSError:
+        font = ImageFont.load_default(size=14)
+    label = ImageFont.load_default(size=18)
     cw, ch = 9, 16
     w, h = result['columns']*cw, result['rows']*ch
     canvas = Image.new('RGB', (2*w+48, h+76), '#11151c')

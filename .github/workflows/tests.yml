@@ -2,7 +2,11 @@ name: Source checks
 on: [push, pull_request]
 jobs:
   unit:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -11,3 +15,28 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python jev.py test
       - run: python tools/check_release.py
+  linux-emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build Linux runtime (no emulator or ROM in image)
+        run: docker build --platform linux/amd64 -t jev-game-agent:local .
+      - name: Obtain official test emulator and generate original test program
+        run: |
+          mkdir -p "$RUNNER_TEMP/bizhawk"
+          curl --fail --location --retry 3 https://github.com/TASEmulators/BizHawk/releases/download/2.11.1/BizHawk-2.11.1-linux-x64.tar.gz -o "$RUNNER_TEMP/bizhawk.tar.gz"
+          tar -xzf "$RUNNER_TEMP/bizhawk.tar.gz" -C "$RUNNER_TEMP/bizhawk"
+          python tools/smoke_fixture.py
+      - name: Verify real bridge, checkpoint determinism and recorded video (zero API)
+        run: |
+          docker run --rm --init --platform linux/amd64 \
+            --env JEV_ROM=/game/ci-fixture.nes \
+            --env JEV_BIZHAWK=/emulator/EmuHawkMono.sh \
+            --mount "type=bind,source=$RUNNER_TEMP/bizhawk,target=/emulator" \
+            --mount "type=bind,source=$PWD/runs,target=/game,readonly" \
+            --mount "type=bind,source=$PWD/runs,target=/app/runs" \
+            jev-game-agent:local smoke --out runs/ci-smoke

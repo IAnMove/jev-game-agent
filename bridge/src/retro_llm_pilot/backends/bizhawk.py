@@ -84,6 +84,9 @@ class BizHawkBackend:
             return LaunchResult(status="load_failed", ok=False, error=f"ROM not found: {rom}")
 
         env = os.environ.copy()
+        env.pop('TYPESAFE_API_KEY', None)  # The emulator never needs the model key.
+        if getattr(self, 'skip_screenshots', False):
+            env['JEV_BRIDGE_SCREENSHOTS'] = '0'
         env["RETRO_LLM_BRIDGE_DIR"] = str(self.paths.bridge_dir)
         env["RETRO_LLM_BOOT_FRAMES"] = str(self.bridge_config.boot_frames)
         env["RETRO_LLM_POLL_SECONDS"] = str(self.bridge_config.poll_interval_seconds)
@@ -93,6 +96,8 @@ class BizHawkBackend:
             str(rom.resolve()),
             f"--lua={self.paths.bridge_lua}",
         ]
+        if os.name != 'nt' and self.paths.emulator.suffix == '.sh':
+            command.insert(0, 'sh')
         if self.paths.config_ini.exists():
             command.append(f"--config={self.paths.config_ini}")
         command.extend(self._record_args())
@@ -334,6 +339,12 @@ class BizHawkBackend:
         generated_config = emulator.resolve().parent / "config.ini"
         if template.exists() and template.stat().st_size > 1024:
             shutil.copyfile(template, config_ini)
+            if os.name != 'nt':
+                config = json.loads(config_ini.read_text(encoding='utf-8-sig'))
+                # Software renderer and OpenAL avoid Windows-only graphics/audio APIs.
+                config.update(DispMethod=1)
+                config.pop('SoundOutputMethod', None)  # Use upstream host-specific default.
+                config_ini.write_text(json.dumps(config, indent=2), encoding='utf-8')
         elif generated_config.exists():
             shutil.copyfile(generated_config, config_ini)
         else:

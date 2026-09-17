@@ -1,0 +1,13 @@
+# Allowlist: never send local credentials, ROMs, emulator files or runs to Docker.
+**
+!Dockerfile
+!requirements.txt
+!jev.py
+!env_config.py
+!container-entry.sh
+!src/
+!src/**
+!bridge/
+!bridge/**
+**/__pycache__
+**/*.pyc

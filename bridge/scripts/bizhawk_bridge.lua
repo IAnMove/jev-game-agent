@@ -23,6 +23,7 @@ local ram_watch_path = bridge_dir .. sep .. "ram_watch.txt"
 local states_dir = bridge_dir .. sep .. "states"
 local poll_seconds = tonumber(os.getenv("RETRO_LLM_POLL_SECONDS") or "0.05") or 0.05
 local boot_frames = tonumber(os.getenv("RETRO_LLM_BOOT_FRAMES") or "120") or 120
+local screenshots_enabled = os.getenv("JEV_BRIDGE_SCREENSHOTS") ~= "0"
 -- Unlike emu.framecount(), this counter is deliberately not part of savestates.
 -- It tracks frames appended to the current A/V dump even when the emulated
 -- machine rewinds during counterfactual probes.
@@ -151,6 +152,7 @@ local function idle_wait()
 end
 
 local function write_screenshot()
+    if not screenshots_enabled then return false end
     local ok = pcall(client.screenshot, screenshot_path)
     return ok
 end

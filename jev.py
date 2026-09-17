@@ -11,6 +11,8 @@ import sys
 import unittest
 import threading
 import webbrowser
+import platform
+from env_config import load_env
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
@@ -70,6 +72,7 @@ def viewer_handler(directory):
 
 
 def configure(args):
+    load_env()
     settings = {}
     if args.config:
         config_path = Path(args.config).resolve()
@@ -84,12 +87,13 @@ def configure(args):
 
 
 def checks(require_key=False):
-    from runtime import ROM, EMULATOR, ENGINE
+    from runtime import ROM, EMULATOR, ENGINE, engine_files
     results = []
     def check(label, ok):
         results.append(bool(ok))
         print(f"{'OK' if ok else 'MISSING/INVALID'}: {label}")
-    check('Windows desktop', os.name == 'nt')
+    check('Windows or Linux x86_64 runtime (macOS: use python3 start.py --container)',
+          sys.platform in ('win32', 'linux') and platform.machine().lower() in ('amd64', 'x86_64'))
     check('Python 3.11+', sys.version_info >= (3, 11))
     try:
         import httpx
@@ -97,9 +101,14 @@ def checks(require_key=False):
         check(f'Python dependencies: httpx {httpx.__version__}, Pillow {PIL.__version__}', True)
     except ImportError:
         check('Python dependencies; run python -m pip install -r requirements.txt', False)
-    check('EmuHawk.exe path (BizHawk 2.11.1 expected)', EMULATOR.is_file() and EMULATOR.name.lower() == 'emuhawk.exe')
-    for name in ('BizHawk.Emulation.Cores.dll', 'BizHawk.Emulation.Common.dll', 'libquicknes.dll'):
-        check(f'Emulator dependency {name}', (EMULATOR.parent/'dll'/name).is_file())
+    expected_launcher = 'EmuHawk.exe' if os.name == 'nt' else 'EmuHawkMono.sh'
+    check(f'{expected_launcher} path (BizHawk 2.11.1 expected)', EMULATOR.is_file() and EMULATOR.name == expected_launcher)
+    for name, path in engine_files().items():
+        check(f'Emulator dependency {name}', path.is_file())
+    if sys.platform == 'linux':
+        for binary in ('mono', 'sh', 'lsb_release'):
+            check(binary+' on PATH', shutil.which(binary))
+        check('X display (desktop or xvfb-run)', bool(os.environ.get('DISPLAY')))
     header = b''
     if ROM.is_file():
         with ROM.open('rb') as stream:
@@ -168,7 +177,7 @@ def main():
         p = sub.add_parser(name)
         p.add_argument('--config', help='Local JSON with rom and emulator paths; no API key')
         p.add_argument('--rom', help='Path to your own .nes ROM; never copied into the repo')
-        p.add_argument('--emulator', help='Path to your separately installed EmuHawk.exe')
+        p.add_argument('--emulator', help='Path to EmuHawk.exe (Windows) or EmuHawkMono.sh (Linux)')
         if name == 'smoke':
             p.add_argument('--out', type=Path, required=True)
         if name == 'play':
@@ -216,7 +225,9 @@ def main():
         return run()
     if args.out.exists():
         parser.error('Output directory must be new')
-    with ThreadingHTTPServer(('127.0.0.1', args.port), viewer_handler(args.out.resolve())) as server:
+    # Docker publishes this port exclusively on host loopback; native stays loopback.
+    bind = '0.0.0.0' if os.environ.get('JEV_CONTAINER') == '1' else '127.0.0.1'
+    with ThreadingHTTPServer((bind, args.port), viewer_handler(args.out.resolve())) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         url = f'http://127.0.0.1:{args.port}/watch.html'

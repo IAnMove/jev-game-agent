@@ -167,9 +167,10 @@ def issue(backend, segment):
 
 
 class CampaignPlanner:
-    def __init__(self, backend, allow_warps=False):
+    def __init__(self, backend, allow_warps=False, fast=False):
         self.backend = backend
         self.allow_warps = allow_warps
+        self.fast = fast
 
     def forecast(self, node, state, folder, tier, deadline):
         b = self.backend
@@ -179,6 +180,12 @@ class CampaignPlanner:
         start_d = describe(state)
         results = {}
         library = recipes(state, tier)
+        if self.fast and tier == 0 and not start['swimming']:
+            # Fewer initial alternatives; full search still expands when exhausted.
+            keep = {'run_briefly', 'run_forward', 'brake', 'running_short_jump',
+                    'running_long_jump', 'sustain_running_jump', 'brake_sustain_jump',
+                    'enter_pipe'}
+            library = {name: plan for name, plan in library.items() if name in keep}
         targets = {f'enter_visible_pipe_{p["left"]}_{p["top"]}': p for p in pipes(state)}
         library.update({name: None for name in targets})
         for name, plan in library.items():

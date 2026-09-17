@@ -2,15 +2,20 @@
 
 ## Setup and execution
 
-Read README.md for prerequisites and complete commands. Use Windows, Python
-3.11+, a separately installed BizHawk 2.11.1, FFmpeg/FFprobe and a local Super
+Read README.md for prerequisites and complete commands. Use Windows x64 or Linux
+x64, Python 3.11+, a separately installed BizHawk 2.11.1, FFmpeg/FFprobe and a local Super
 Mario Bros. PAL ROM supplied by the operator. Never download or commit game
 assets or emulator binaries.
 
+macOS uses the Linux x64 Docker runtime through start.py; do not claim native
+Mac emulator support. Its .env must reference the Linux EmuHawkMono.sh launcher.
 Create `.venv`, install `requirements.txt`, and use `.venv/Scripts/python.exe`
-for commands. `config.local.json` accepts only `rom` and `emulator` paths and is
-ignored by Git. Set `TYPESAFE_API_KEY` in the runner's environment; never print
-it or place it in source, command examples, logs or configuration files.
+on Windows or `.venv/bin/python` on Linux. `start.py` automates this setup.
+The local `.env` accepts TYPESAFE_API_KEY, JEV_ROM and JEV_BIZHAWK; it is excluded
+from Git and Docker builds. Only the empty `.env.example` is published.
+`config.local.json` still accepts only `rom` and `emulator` paths. CLI overrides
+JSON, then environment, then .env. Never print keys or include them in source,
+examples, logs, build arguments or published settings.
 
 Run these checks without a ROM or API key:
 
@@ -37,6 +42,9 @@ claiming a completed game; partial routes can also replay successfully.
 
 - `jev.py`: CLI, local asset configuration, checks and localhost viewer.
 - `start.ps1`: interactive Windows launcher with hidden API-key input.
+- `start.py`, `start.sh`: portable native/container launchers.
+- `env_config.py`: literal .env loading; no shell evaluation or interpolation.
+- `Dockerfile`, `container-entry.sh`: Linux virtual display and runtime; no emulator or game.
 - `src/jev_games/run.py`: RAM observations, API transport and backend helpers.
 - `campaign_model.py`: SMB actions, outcomes, guide context and terminal rules.
 - `campaign.py`: simulations, Jev decisions, failure memory and checkpoints.
@@ -56,6 +64,11 @@ Do not reuse SMB addresses or infer success from forward movement alone.
 Preserve others' uncommitted work. Keep changes scoped and run the relevant
 checks. Live telemetry must not advance emulator frames or make extra API calls.
 Keep execution, recorded controls and replay state checks consistent.
+CI tests Python on Windows, Linux and macOS, and the actual Linux bridge with a
+generated original test program. This does not verify gameplay on Apple Silicon
+hardware. Preserve OS/core hashes; never bypass replay checks across platforms.
+Keep .dockerignore's allowlist excluding local .env and runs. The release checker
+must reject non-empty .env.example settings, even when they are not recognizable keys.
 
 The shared documentation is README.md and AGENTS.md. Do not add internal notes,
 conversation transcripts, social-media drafts or personal experiment reports.

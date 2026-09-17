@@ -1,0 +1,33 @@
+{
+  "id": "optional_4_4_walkthrough_v1",
+  "authorization": "Optional external walkthrough enabled explicitly with --hint-file.",
+  "sources": [
+    "https://www.mariowiki.com/World_4-4_(Super_Mario_Bros.)",
+    "https://strategywiki.org/wiki/Super_Mario_Bros./World_4",
+    "https://www.mariowiki.com/File:SMB_NES_World_4-4_Map.png"
+  ],
+  "levels": {
+    "4-4": {
+      "assistance": "External walkthrough assistance; this route is supplied to Jev rather than discovered unaided.",
+      "route": "FIRST maze: UPPER corridor. SECOND maze: BOTTOM corridor. Wrong height repeats the hall. These are corridors, not pipes. Reach the axe beyond the fake Bowser.",
+      "coordinates": "World pixel coordinates interpreted from the published NES map; y increases downward. Heights below refer to Mario's FEET, not his sprite top.",
+      "rules": [
+        "Follow the ordered corridor route before maximizing horizontal progress. A safe action entering the wrong corridor is not progress.",
+        "The first upper floor is at feet_y=96 and starts near x=288. Keep that height across the small gaps. Do not drop to feet_y=208 in this first maze.",
+        "After passing the first maze, drop at the end of the upper floor around x=1200 and go underneath the wall around x=1232.",
+        "Climb the platforms around x=1376,1424,1488 to the high floor at x=1520. Drop through the FIRST upper-floor gap x=1568..1600, then move LEFT along the middle floor to its gap x=1520..1536. Drop to the bottom, then go RIGHT along the lowest corridor.",
+        "Second-maze correct floor is feet_y=208. Remain below the middle floor; upper and middle corridors loop. Avoid unnecessary jumps near the end of either maze: the game checks that Mario is grounded at the correct height.",
+        "Past x=2320 the maze is over. Avoid fire, pass Bowser and touch the axe. Do not stop merely on reaching the boss."
+      ],
+      "phases": [
+        {"x_min": 2320, "goal": "Maze complete: pass Bowser and touch the axe on the right."},
+        {"x_min": 1504, "feet_min": 192, "goal": "SECOND MAZE: stay on the BOTTOM corridor at feet_y=208 and advance right. Avoid jumps unless needed for a hazard.", "target_feet_y": 208},
+        {"x_max": 1100, "goal": "FIRST MAZE: reach and STAY on the UPPER corridor, feet_y=96. Prefer a landing at this height over a larger x on the bottom floor. Jump across gaps when running would drop you.", "target_feet_y": 96},
+        {"x_max": 1344, "goal": "First maze passed. Continue to the end of the upper floor, drop near x=1200 and move right UNDER the wall near x=1232."},
+        {"x_min": 1510, "feet_min": 113, "goal": "SECOND MAZE ENTRY: move LEFT to the middle-floor gap x=1520..1536 and drop to feet_y=208. Moving right on this middle floor is the wrong route.", "target_x": 1520, "target_feet_y": 208},
+        {"x_min": 1520, "goal": "SECOND MAZE ENTRY: align with the first upper-floor gap x=1568..1600 (Mario x about 1576) and drop WITHOUT jumping. If you passed it, move LEFT back to it.", "target_x": 1576, "target_feet_y": 160},
+        {"goal": "Climb the stone platforms above the lava to the high floor near x=1520, feet_y=96. Then use the first gap in that floor to descend toward the bottom corridor.", "target_x": 1520, "target_feet_y": 96}
+      ]
+    }
+  }
+}

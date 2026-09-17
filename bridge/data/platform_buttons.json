@@ -1,0 +1,118 @@
+{
+  "NES": {
+    "system_ids": ["NES"],
+    "prefix": "P1 ",
+    "buttons": ["Up", "Down", "Left", "Right", "Start", "Select", "B", "A"],
+    "aliases": {
+      "up": "Up",
+      "down": "Down",
+      "left": "Left",
+      "right": "Right",
+      "start": "Start",
+      "select": "Select",
+      "b": "B",
+      "a": "A"
+    },
+    "fps": 60.0988
+  },
+  "SNES": {
+    "system_ids": ["SNES"],
+    "prefix": "P1 ",
+    "buttons": ["Up", "Down", "Left", "Right", "Select", "Start", "Y", "X", "B", "A", "L", "R"],
+    "aliases": {
+      "up": "Up",
+      "down": "Down",
+      "left": "Left",
+      "right": "Right",
+      "start": "Start",
+      "select": "Select",
+      "b": "B",
+      "a": "A",
+      "x": "X",
+      "y": "Y",
+      "l": "L",
+      "r": "R"
+    },
+    "fps": 60.0988
+  },
+  "N64": {
+    "system_ids": ["N64"],
+    "prefix": "P1 ",
+    "analog": true,
+    "buttons": ["A Up", "A Down", "A Left", "A Right", "Start", "Z", "B", "A", "C Up", "C Down", "C Left", "C Right", "L", "R"],
+    "aliases": {
+      "up": "A Up",
+      "down": "A Down",
+      "left": "A Left",
+      "right": "A Right",
+      "start": "Start",
+      "z": "Z",
+      "b": "B",
+      "a": "A",
+      "c_up": "C Up",
+      "c_down": "C Down",
+      "c_left": "C Left",
+      "c_right": "C Right",
+      "l": "L",
+      "r": "R"
+    },
+    "analog_axes": {
+      "x": "X Axis",
+      "y": "Y Axis"
+    },
+    "fps": 60.0
+  },
+  "GB": {
+    "system_ids": ["GB", "GBC"],
+    "prefix": "P1 ",
+    "buttons": ["Up", "Down", "Left", "Right", "Start", "Select", "B", "A"],
+    "aliases": {
+      "up": "Up",
+      "down": "Down",
+      "left": "Left",
+      "right": "Right",
+      "start": "Start",
+      "select": "Select",
+      "b": "B",
+      "a": "A"
+    },
+    "fps": 59.7275
+  },
+  "GBA": {
+    "system_ids": ["GBA"],
+    "prefix": "P1 ",
+    "buttons": ["Up", "Down", "Left", "Right", "Start", "Select", "B", "A", "L", "R"],
+    "aliases": {
+      "up": "Up",
+      "down": "Down",
+      "left": "Left",
+      "right": "Right",
+      "start": "Start",
+      "select": "Select",
+      "b": "B",
+      "a": "A",
+      "l": "L",
+      "r": "R"
+    },
+    "fps": 59.7275
+  },
+  "GEN": {
+    "system_ids": ["GEN", "Genesis"],
+    "prefix": "P1 ",
+    "buttons": ["Up", "Down", "Left", "Right", "A", "B", "C", "X", "Y", "Z", "Start"],
+    "aliases": {
+      "up": "Up",
+      "down": "Down",
+      "left": "Left",
+      "right": "Right",
+      "start": "Start",
+      "a": "A",
+      "b": "B",
+      "c": "C",
+      "x": "X",
+      "y": "Y",
+      "z": "Z"
+    },
+    "fps": 59.9227434043123
+  }
+}

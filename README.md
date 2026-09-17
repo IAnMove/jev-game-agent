@@ -178,7 +178,8 @@ restore triggers**. Recovery happens after actual death/game over, or after
 seconds for PAL). API/search waiting does not count. `--stuck-frames 0` disables
 stationary recovery. There is no decision-count or novelty-count restart.
 If the same checkpoint and identical executed inputs produce the same actual
-death again, recovery moves to the parent checkpoint to escape the fatal branch;
+death again, recovery walks back through checkpoints to at least 128 pixels
+before that position (or an area boundary / route start) to change the takeoff;
 a predicted death or maze repetition alone does not trigger this recovery.
 If all initially safe options are exhausted, the search expands; if none remain,
 Jev receives a clearly marked risky fallback instead of a preemptive rewind.

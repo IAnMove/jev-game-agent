@@ -23,9 +23,10 @@ class CampaignTests(unittest.TestCase):
         c.summary = {'decisions': 1}
         c.failures = []
         c.event = Mock()
-        root = {'id': 'root', 'parent': None, 'state': {'level': '1-1'}, 'banned': {}}
-        child = {'id': 'child', 'parent': 'root', 'via': 'jump', 'state': {'level': '1-1'}, 'banned': {}}
-        c.nodes = {'root': root, 'child': child}
+        root = {'id': 'root', 'parent': None, 'state': {'level': '1-1', 'area': 'test', 'x': 100}, 'banned': {}}
+        prefix = {'id': 'prefix', 'parent': 'root', 'via': 'jump', 'state': {'level': '1-1', 'area': 'test', 'x': 248}, 'banned': {}}
+        child = {'id': 'child', 'parent': 'prefix', 'via': 'jump', 'state': {'level': '1-1', 'area': 'test', 'x': 252}, 'banned': {}}
+        c.nodes = {'root': root, 'child': child, 'prefix': prefix}
         segments = [{'buttons': ['right'], 'frames': 4}]
         with patch('campaign.describe', return_value={'timer': 200}), patch('campaign.values', return_value={}):
             self.assertEqual(c.death_checkpoint(child, 'run', 'death_routine', segments)[0]['id'], 'child')
@@ -34,7 +35,7 @@ class CampaignTests(unittest.TestCase):
             self.assertEqual(c.death_checkpoint(child, 'jump', 'death_routine', other)[0]['id'], 'child')
             target, reason = c.death_checkpoint(child, 'run', 'death_routine', segments)
             self.assertEqual(target['id'], 'root')
-            self.assertEqual(reason, 'repeated_actual_death_move_to_parent')
+            self.assertEqual(reason, 'repeated_actual_death_replan_earlier')
 
     def test_guided_progress_is_not_penalized_for_unguided_visits(self):
         guide = {'id': 'test-guide', 'levels': {'4-4': {}}}

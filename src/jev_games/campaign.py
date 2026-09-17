@@ -314,7 +314,13 @@ class Campaign:
             # not a fresh attempt. Move before the committed fatal branch.
             target = self.nodes[node['parent']]
             self.remember_failure(target, node['via'], 'repeated_actual_death_from_child')
-            failure = 'repeated_actual_death_move_to_parent'
+            # Adjacent nodes can be tiny prefixes of the same doomed jump.
+            # Go far enough back to change its takeoff, not into another copy
+            # of the committed trajectory. This is triggered by actual deaths.
+            while (target['parent'] and target['state']['area'] == node['state']['area']
+                   and abs(target['state']['x']-node['state']['x']) < 128):
+                target = self.nodes[target['parent']]
+            failure = 'repeated_actual_death_replan_earlier'
         return target, failure
 
     def recover_plateau(self):

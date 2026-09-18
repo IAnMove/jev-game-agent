@@ -16,7 +16,7 @@ from run import ROOT, ENGINE, WATCH, values, write, snapshot
 from lookahead import fingerprint
 from run_lookahead import backend_at, query
 from campaign_model import (configure, CampaignPlanner, death_reason, won, playable,
-    describe, cell, novelty_cell, level_id, rank, area_id, issue, make_request)
+    describe, cell, novelty_cell, level_id, rank, area_id, issue, make_request, guide_context)
 from campaign_media import finalize
 from image_ascii import attach_ascii
 from live_view import LiveView
@@ -322,9 +322,16 @@ class Campaign:
             # Adjacent nodes can be tiny prefixes of the same doomed jump.
             # Go far enough back to change its takeoff, not into another copy
             # of the committed trajectory. This is triggered by actual deaths.
-            while (target['parent'] and target['state']['area'] == node['state']['area']
-                   and abs(target['state']['x']-node['state']['x']) < 128):
+            branch = node
+            while (target['parent'] and self.nodes[target['parent']]['state'].get('level') == node['state'].get('level')
+                   and ((target['state'].get('phase') not in (None, 'grounded')
+                         and not target['state'].get('swimming'))
+                        or (target['state']['area'] == node['state']['area']
+                            and abs(target['state']['x']-node['state']['x']) < 128))):
+                branch = target
                 target = self.nodes[target['parent']]
+            if branch is not node:
+                self.remember_failure(target, branch['via'], 'repeated_actual_death_from_branch')
             failure = 'repeated_actual_death_replan_earlier'
         return target, failure
 
@@ -600,6 +607,10 @@ class Campaign:
                     self.launch_player(self.nodes[self.current]['folder'])
                 self.summary['status'] = 'running'
                 node = self.nodes[self.current]
+                hint = guide_context(describe(self.state), self.guide)
+                if hint and not self.args.turbo:
+                    minimum = hint['current_navigation_goal'].get('minimum_search_tier', 0)
+                    node['tier'] = max(node['tier'], max(0, min(2, int(minimum))))
                 self.summary['decisions'] += 1
                 self.no_novelty += 1
                 decision = self.summary['decisions']

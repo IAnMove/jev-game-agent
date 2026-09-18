@@ -17,6 +17,32 @@ def state(**updates):
 
 
 class CampaignTests(unittest.TestCase):
+    def test_repeated_death_skips_airborne_area_change_to_grounded_takeoff(self):
+        c = Campaign.__new__(Campaign)
+        c.state, c.summary, c.failures, c.event = {}, {'decisions': 1}, [], Mock()
+        def node(i, parent, x, area, phase, via='jump'):
+            return {'id': i, 'parent': parent, 'via': via, 'banned': {},
+                    'state': {'level': '8-4', 'x': x, 'area': area, 'phase': phase}}
+        ground = node('ground', None, 1020, 'old', 'grounded')
+        apex = node('apex', 'ground', 1143, 'old', 'apex')
+        child = node('child', 'apex', 1114, 'new', 'descending', 'brake')
+        c.nodes = {n['id']: n for n in (ground, apex, child)}
+        segments = [{'buttons': ['left'], 'frames': 4}]
+        with patch('campaign.describe', return_value={'timer': 200}), patch('campaign.values', return_value={}):
+            self.assertEqual(c.death_checkpoint(child, 'retreat', 'death_music_flag', segments)[0], child)
+            target, reason = c.death_checkpoint(child, 'retreat', 'death_music_flag', segments)
+        self.assertEqual(target, ground)
+        self.assertIn('jump', ground['banned'])
+        self.assertEqual(reason, 'repeated_actual_death_replan_earlier')
+
+    def test_walkthrough_can_distinguish_rooms_with_the_same_x(self):
+        guide = {'id':'pipes', 'sources':[], 'levels':{'8-4':{'phases':[
+            {'area':'first','goal':'first pipe'}, {'area':'second','goal':'floating pipe'},
+            {'swimming':True,'goal':'underwater exit'}]}}}
+        for area, swim, goal in [('first',False,'first pipe'),('second',False,'floating pipe'),('water',True,'underwater exit')]:
+            current = {'level':'8-4','x':100,'feet_y':160,'area':area,'swimming':swim}
+            self.assertEqual(guide_context(current,guide)['current_navigation_goal']['goal'],goal)
+
     def test_actual_repeated_death_moves_before_fatal_checkpoint(self):
         c = Campaign.__new__(Campaign)
         c.state = {}

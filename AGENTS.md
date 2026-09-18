@@ -77,6 +77,10 @@ Do not reintroduce decision-count or novelty-count resets. Physical stall recove
 uses executed game frames (default 600; 0 disables), and timeout death restores
 the level entry. Exhausted predictions use an explicit risky choice fallback,
 rather than immediately restoring without actually playing the choice.
+Repeated actual deaths must backtrack before a committed airborne trajectory,
+even when an area identifier changes mid-jump; do not cross the current level's entry.
+Optional guide phases can match area, swimming and maze_pass, and request a
+minimum_search_tier (0..2). Log such external assistance and keep local guides ignored.
 CI tests Python on Windows, Linux and macOS, and the actual Linux bridge with a
 generated original test program. This does not verify gameplay on Apple Silicon
 hardware. Preserve OS/core hashes; never bypass replay checks across platforms.

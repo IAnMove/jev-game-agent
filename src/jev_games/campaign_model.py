@@ -296,7 +296,8 @@ def guide_context(current, guide):
     level = guide['levels'][current['level']]
     phase = next((p for p in level['phases']
                   if p.get('x_min', -1e9) <= current['x'] < p.get('x_max', 1e9)
-                  and p.get('feet_min', -1e9) <= current['feet_y'] < p.get('feet_max', 1e9)), {})
+                  and p.get('feet_min', -1e9) <= current['feet_y'] < p.get('feet_max', 1e9)
+                  and all(current.get(k) == p[k] for k in ('area', 'swimming', 'maze_pass') if k in p)), {})
     return {k: v for k, v in level.items() if k != 'phases'} | {
         'guide_id': guide['id'], 'sources': guide['sources'], 'current_navigation_goal': phase}
 
@@ -338,6 +339,7 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
         'current': current, 'completed_levels': completed,
         'external_walkthrough': hint,
         'visible_geometry': observe(state)['solid_rectangles_xyxy'] if hint and state.get('ram') else None,
+        'visible_objects': observe(state)['objects'] if hint and state.get('ram') else None,
         'visible_enterable_pipes': pipes(state) if state.get('ram') else [],
         'warp_zone_help': 'A nonzero warp_zone_control enables warp pipes. In a warp room the exit is DOWN through a pipe, not the right wall. enter_visible_pipe skills simulate jumping, alignment and Down from the current RAM geometry. Prefer an eligible successful pipe entry over horizontal distance.',
         'previous_failed_attempts': nearby_failures, 'banned_at_this_exact_checkpoint': node['banned'],

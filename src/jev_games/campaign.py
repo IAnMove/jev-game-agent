@@ -24,6 +24,7 @@ from recovery import StallWatch
 from manual_control import ManualControl, ManualRequested
 import turbo
 from gap_jump import has_useful_option
+from navigation import pipe_destination, confirmed_arrival, navigation_context
 
 
 class DeterminismError(RuntimeError):
@@ -41,7 +42,7 @@ def read(path):
 def campaign_backend(folder, record=False, fast=False):
     backend = backend_at(folder, record, fast=fast)
     backend.write_ram_watch({k: f'0x{v:04x},System Bus'
-                             for k, v in (WATCH | {'warp_zone': 0x6d6}).items()})
+                             for k, v in (WATCH | {'warp_zone': 0x6d6, 'entrance_page': 0x751}).items()})
     return backend
 
 
@@ -71,6 +72,7 @@ class Campaign:
         self.failures = []
         self.visited = {}
         self.history = []
+        self.navigation_edges = []
         self.videos = []
         self.inherited_wall = 0
         self.no_novelty = 0
@@ -80,7 +82,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['navigation.py', 'gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -148,7 +150,7 @@ class Campaign:
                        and previous.get('objective') == current['objective']
                        and previous.get('external_guide') == self.guide
                        and all(previous.get('source_sha256', {}).get(name) == current['source_sha256'][name]
-                               for name in ('campaign_model.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
+                               for name in ('campaign_model.py', 'navigation.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
         for field in ('rom_sha256', 'engine_hashes', 'config_sha256', 'watches'):
             if previous[field] != current[field]:
                 raise DeterminismError(f'Resume {field} mismatch')
@@ -161,6 +163,7 @@ class Campaign:
         self.deadline = float('inf') if self.args.until_complete else self.started+max(0, self.args.wall_seconds-self.inherited_wall)
         self.nodes, self.current = store['nodes'], store['current_node']
         self.route, self.failures, self.visited = store['route'], store['failures'], store['visited']
+        self.navigation_edges = store.get('navigation_edges', [])
         for node in self.nodes.values():
             folder = self.out/'nodes'/node['id']
             folder.mkdir(parents=True)
@@ -177,7 +180,7 @@ class Campaign:
         node = self.nodes[self.current]
         while node['parent'] is not None:
             parent = self.nodes[node['parent']]
-            ancestors.append({'from': parent['state'], 'action': node['via'], 'to': node['state']})
+            ancestors.append(node.get('history_entry') or {'from': parent['state'], 'action': node['via'], 'to': node['state']})
             node = parent
         self.history = list(reversed(ancestors))
         self.route = self.route[:self.nodes[self.current]['route_length']]
@@ -207,6 +210,7 @@ class Campaign:
         write(self.out/'checkpoint_store.json', {'current_node': self.current, 'nodes': self.nodes,
             'failures': self.failures, 'visited': self.visited, 'route': self.route,
             'seen_cells': sorted(self.seen_cells), 'recovery_counts': self.recovery_counts,
+            'navigation_edges': self.navigation_edges,
             'novelty_policy': 'guide_scoped_v1'})
         write(self.out/'videos.json', self.videos)
 
@@ -260,6 +264,8 @@ class Campaign:
         node = {'id': node_id, 'parent': parent, 'via': via, 'folder': str(folder),
             'state': describe(self.state), 'route_length': len(self.route), 'history_length': len(self.history),
             'banned': {}, 'tier': 0}
+        if parent and self.history:
+            node['history_entry'] = self.history[-1]
         self.nodes[node_id] = node
         self.current = node_id
         if parent is None:
@@ -607,7 +613,7 @@ class Campaign:
                     self.launch_player(self.nodes[self.current]['folder'])
                 self.summary['status'] = 'running'
                 node = self.nodes[self.current]
-                hint = guide_context(describe(self.state), self.guide)
+                hint = guide_context(describe(self.state), self.guide, self.history)
                 if hint and not self.args.turbo:
                     minimum = hint['current_navigation_goal'].get('minimum_search_tier', 0)
                     node['tier'] = max(node['tier'], max(0, min(2, int(minimum))))
@@ -645,6 +651,7 @@ class Campaign:
                         write(cache, forecasts)
                     payload = build_request(self.state, forecasts, node, self.failures,
                         self.history, self.visited, self.summary['completed_levels'], self.args.allow_warps, self.guide)
+                    payload['state']['observed_pipe_connections'] = self.navigation_edges[-24:]
                     attach_ascii(payload, folder/'before.png', self.args.ascii_level, folder)
                     write(folder/'request.json', payload)
                     if (node['tier'] >= 2 or self.args.turbo or
@@ -658,6 +665,7 @@ class Campaign:
                     payload = build_request(self.state, forecasts, node, self.failures,
                         self.history, self.visited, self.summary['completed_levels'],
                         self.args.allow_warps, self.guide, allow_risky=True)
+                    payload['state']['observed_pipe_connections'] = self.navigation_edges[-24:]
                     attach_ascii(payload, folder/'before.png', self.args.ascii_level, folder)
                     write(folder/'request.json', payload)
                     self.event('risk_fallback', reason='All direct recipes have failed here; Jev retries with failure memory.' if self.args.turbo else 'No safe untried candidate; continue actual play, do not rewind a prediction.')
@@ -680,6 +688,7 @@ class Campaign:
                 frames_before = self.summary['frames_executed']
                 failure = self.move(chosen['segments'], choice,
                     'Jev Turbo' if self.args.turbo else 'Jev+ASCII' if 'screen_ascii' in payload['state'] else 'Jev', chosen['trajectory'])
+                destination = pipe_destination(self.state)
                 if not failure:
                     failure = self.transition()
                 write(folder/'timing.json', {'profile': profile, 'search_seconds': search_seconds,
@@ -723,7 +732,16 @@ class Campaign:
                 if level_changed and not warped and level_id(old_r) not in self.summary['completed_levels']:
                     self.summary['completed_levels'].append(level_id(old_r))
                     self.event('level_completed', level=level_id(old_r), entered=level_id(new_r))
-                self.history.append({'from': describe(old), 'action': choice, 'to': now})
+                entry = {'from': describe(old), 'action': choice, 'to': now}
+                if destination:
+                    crossing = {'level': now['level'], 'source_room': navigation_context(self.history, describe(old), self.guide)['current_room'],
+                                'source_x': describe(old)['x'], 'pipe': chosen['outcome'].get('target_pipe'),
+                                'destination': destination, 'arrival': now,
+                                'confirmed': confirmed_arrival(destination, now), 'decision': decision}
+                    entry['pipe_transition'] = crossing
+                    self.navigation_edges.append(crossing)
+                    self.event('pipe_transition_observed', **crossing)
+                self.history.append(entry)
                 self.visited[cell(self.state)] = self.visited.get(cell(self.state), 0)+1
                 novelty = novelty_cell(self.state, self.guide)
                 if self.args.trial_level:

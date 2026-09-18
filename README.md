@@ -306,6 +306,10 @@ The current bounded operation finishes before video is finalized. To continue a
 ```
 
 Local runs retain complete checkpoints and may use substantial disk space.
+Pipe navigation now records confirmed source/destination connections. Room position
+follows the restored checkpoint history, while observed connections remain available
+to Jev across retries. Optional room-specific walkthroughs can define the expected
+next room; these remain explicit external assistance, not autonomous discovery.
 Keep the source run accessible for inherited video links. Paths in archived run
 metadata are currently local absolute paths: moving a run is not yet portable.
 Do not transfer checkpoints between OSes, container/native modes or emulator

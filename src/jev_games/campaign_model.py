@@ -6,6 +6,7 @@ import json
 import shutil
 import time
 from gap_jump import visible_gap, GapJump
+from navigation import navigation_context, pipe_destination
 
 from run import WATCH, values, observe, write
 from lookahead import fingerprint, compact, candidates
@@ -259,6 +260,7 @@ class CampaignPlanner:
                       'outcome': {'eligible': not failure and not tail_failure,
                          'failure': failure, 'coast_failure': tail_failure,
                          'coasting_horizon_frames': coast_frames,
+                         'pipe_destination': pipe_destination(end_state),
                          'frames': elapsed, 'progress_px': end['x']-start_d['x'],
                          'level_delta': rank(values(end_state))-rank(start),
                          'area_changed': end['area'] != start_d['area'],
@@ -292,13 +294,15 @@ class CampaignPlanner:
         return results
 
 
-def guide_context(current, guide):
+def guide_context(current, guide, history=()):
     if not guide or current.get('level') not in guide.get('levels', {}):
         return None
     level = guide['levels'][current['level']]
+    room = navigation_context(history, current, guide)['current_room']
     phase = next((p for p in level['phases']
                   if p.get('x_min', -1e9) <= current['x'] < p.get('x_max', 1e9)
                   and p.get('feet_min', -1e9) <= current['feet_y'] < p.get('feet_max', 1e9)
+                  and ('room' not in p or p['room'] == room)
                   and all(current.get(k) == p[k] for k in ('area', 'swimming', 'maze_pass') if k in p)), {})
     return {k: v for k, v in level.items() if k != 'phases'} | {
         'guide_id': guide['id'], 'sources': guide['sources'], 'current_navigation_goal': phase}
@@ -313,7 +317,8 @@ def novelty_cell(state, guide=None):
 
 def make_request(state, forecasts, node, failures, history, visited, completed, allow_warps=False, guide=None, allow_risky=False):
     current = describe(state)
-    hint = guide_context(current, guide)
+    hint = guide_context(current, guide, history)
+    navigation = navigation_context(history, current, guide)
     def signature(item):
         return json.dumps([{'buttons': sorted(s['buttons']), 'frames': s['frames']}
                            for s in item.get('segments', [])], sort_keys=True)
@@ -328,6 +333,9 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
             item['outcome']['previous_visits_to_destination'] = visited.get(key, 0)
             if hint:
                 target = hint['current_navigation_goal']
+                destination = item['outcome'].get('pipe_destination')
+                if destination and target.get('next_room'):
+                    item['outcome']['matches_guided_next_room'] = destination['key'] == target['next_room']
                 item['outcome']['external_hint_distance'] = {
                     label: abs(end[field]-target[label])
                     for label, field in (('target_x', 'x'), ('target_feet_y', 'feet_y')) if label in target}
@@ -340,6 +348,7 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
         'objective': ('Rescue the princess in 8-4. Warp shortcuts are allowed; use a pipe to leave a warp zone. Skipped levels do not count as completed.' if allow_warps else 'Complete all 32 levels in order and rescue the princess in 8-4. Avoid warp shortcuts.')+' Optional coins have no priority.',
         'current': current, 'completed_levels': completed,
         'external_walkthrough': hint,
+        'navigation_memory': navigation,
         'visible_geometry': observe(state)['solid_rectangles_xyxy'] if hint and state.get('ram') else None,
         'visible_objects': observe(state)['objects'] if hint and state.get('ram') else None,
         'visible_enterable_pipes': pipes(state) if state.get('ram') else [],
@@ -350,6 +359,7 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
         'method': 'Exact emulator rollouts from a copied checkpoint. Generic pipe skills use RAM feedback for jump/alignment/Down; you choose among their simulated outcomes. Failed branches are excluded. Long-term safety is not guaranteed. After a failure the program restores a prior checkpoint and gives you this explicit failure memory; your model weights have not been updated.',
         'rules': [
             'Choose a coherent maneuver making progress towards completing the current area. Favor actual level/area completion, safe landing and forward progress.',
+            'Use navigation_memory to identify your room, not horizontal X or a changed area_pointer. Prefer pipe entries with matches_guided_next_room=true. Reject known return pipes marked false; moving right alone is not maze progress.',
             'Learn from the provided failures: do NOT repeat the failed strategy through a different equivalent action. requires_immediate_replan means evaluate the next move immediately; a short prefix is not a full crossing. A gap_crossed landing has an explicit shorter coasting horizon, not a promise that waiting there is safe.',
             'Compare destination height and novelty. Escape repeated locations with a different height, timing, retreat, pipe entry or waiting for a moving obstacle.',
             'In water, pulse A to swim upward, release to sink, steer right toward the exit pipe. In castles, a large backward X shift can be the game repeating a maze: change corridors and keep playing. No automatic restore follows from this observation.',

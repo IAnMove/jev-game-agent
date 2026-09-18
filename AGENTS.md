@@ -55,6 +55,7 @@ claiming a completed game; partial routes can also replay successfully.
 - `turbo.py`: direct RAM option selection, without a shadow emulator or predicted outcomes.
   Never label these options as simulated/safe; preserve actual-input replay hashes.
 - `gap_jump.py`: RAM-derived run-up and edge-jump skills, simulated before Jev selects them.
+- `navigation.py`: observed pipe destinations and room memory reconstructed from checkpoint history.
 - `campaign_media.py`, `campaign_replay.py`: video capture and deterministic replay.
 - `live_view.py`, `campaign_watch.html`: telemetry and the browser dashboard.
 - `manual_control.py`: validated browser intent and input heartbeat expiration.
@@ -81,6 +82,10 @@ Repeated actual deaths must backtrack before a committed airborne trajectory,
 even when an area identifier changes mid-jump; do not cross the current level's entry.
 Optional guide phases can match area, swimming and maze_pass, and request a
 minimum_search_tier (0..2). Log such external assistance and keep local guides ignored.
+Room-scoped guides may declare initial_room, rooms and phase.room/next_room.
+Only completed pipe transitions change the tracked room; X wraps do not. Retain
+history_entry on checkpoints and observed connections across restores. The auxiliary
+entrance_page watch is telemetry, excluded from the historical RAM replay digest.
 CI tests Python on Windows, Linux and macOS, and the actual Linux bridge with a
 generated original test program. This does not verify gameplay on Apple Silicon
 hardware. Preserve OS/core hashes; never bypass replay checks across platforms.

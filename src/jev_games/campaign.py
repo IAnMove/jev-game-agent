@@ -25,6 +25,7 @@ from manual_control import ManualControl, ManualRequested
 import turbo
 from gap_jump import has_useful_option
 from navigation import pipe_destination, confirmed_arrival, navigation_context
+from death_memory import death_episode
 
 
 class DeterminismError(RuntimeError):
@@ -82,7 +83,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['navigation.py', 'gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['death_memory.py', 'navigation.py', 'gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -150,7 +151,7 @@ class Campaign:
                        and previous.get('objective') == current['objective']
                        and previous.get('external_guide') == self.guide
                        and all(previous.get('source_sha256', {}).get(name) == current['source_sha256'][name]
-                               for name in ('campaign_model.py', 'navigation.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
+                               for name in ('campaign_model.py', 'death_memory.py', 'navigation.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
         for field in ('rom_sha256', 'engine_hashes', 'config_sha256', 'watches'):
             if previous[field] != current[field]:
                 raise DeterminismError(f'Resume {field} mismatch')
@@ -312,9 +313,19 @@ class Campaign:
 
     def death_checkpoint(self, node, choice, failure, segments):
         previous = node['banned'].get(choice, {})
-        repeated = previous.get('executed_segments') == segments and previous.get('reason') == failure
+        repeated = previous.get('planned_segments', previous.get('executed_segments')) == segments and previous.get('reason') == failure
         self.remember_failure(node, choice, failure)
-        node['banned'][choice]['executed_segments'] = segments
+        record = node['banned'][choice]
+        record['planned_segments'] = segments
+        route = getattr(self, 'route', [])
+        actual = next((m for m in reversed(route) if m.get('action') == choice), None)
+        record['executed_segments'] = actual['segments'] if actual else []
+        current = describe(self.state)
+        room = navigation_context(getattr(self, 'history', []), current, getattr(self, 'guide', None))['current_room']
+        episode = death_episode(route, current, failure, room)
+        if episode:
+            record['death_episode'] = episode
+            self.event('death_episode_recorded', episode=episode)
         target = node
         if describe(self.state)['timer'] == 0 or values(self.state).get('timer_expired'):
             while target['parent'] and self.nodes[target['parent']]['state']['level'] == node['state']['level']:
@@ -414,6 +425,7 @@ class Campaign:
             'rewinds': self.summary['rewinds'], 'move': move_id, 'after': describe(self.state)}
         self.chapter_events.append(event)
         self.route.append({'move': move_id, 'action': action, 'controller': controller,
+            'before_state': describe(before),
             'segments': actual, 'trajectory': trace, 'before_ram_sha256': fingerprint(before),
             'after_ram_sha256': fingerprint(self.state)})
         self.event('move', **event)

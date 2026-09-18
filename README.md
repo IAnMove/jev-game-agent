@@ -187,6 +187,15 @@ The game timer runs normally; a timeout death restores the level entry rather
 than a checkpoint whose timer has already expired. Time/token budget stops and
 technical-error recovery remain separate from gameplay failures.
 
+After an observed death, Jev receives nearby failed attempts with the actual
+button combinations and their duration in game frames, approach velocity,
+positions and the last recorded grounded state. The prompt asks it to vary the
+approach, takeoff timing, jump hold or braking. Unknown collision causes stay
+unknown; this is contextual memory, not model training. Full episodes remain in
+the local logs; prompts include at most two relevant episodes and the last 24
+control changes per episode, with omissions labelled. Simulated outcomes appear
+once, with final states encoded as changes from the current state to save context.
+
 For the shortest pauses, use **Turbo**:
 
 ```powershell

@@ -56,6 +56,7 @@ claiming a completed game; partial routes can also replay successfully.
   Never label these options as simulated/safe; preserve actual-input replay hashes.
 - `gap_jump.py`: RAM-derived run-up and edge-jump skills, simulated before Jev selects them.
 - `navigation.py`: observed pipe destinations and room memory reconstructed from checkpoint history.
+- `death_memory.py`: factual pre-death input sequences and bounded prompt summaries.
 - `campaign_media.py`, `campaign_replay.py`: video capture and deterministic replay.
 - `live_view.py`, `campaign_watch.html`: telemetry and the browser dashboard.
 - `manual_control.py`: validated browser intent and input heartbeat expiration.
@@ -80,6 +81,11 @@ the level entry. Exhausted predictions use an explicit risky choice fallback,
 rather than immediately restoring without actually playing the choice.
 Repeated actual deaths must backtrack before a committed airborne trajectory,
 even when an area identifier changes mid-jump; do not cross the current level's entry.
+Death episodes must use executed inputs paired with recorded RAM, never unexecuted
+plan tails. Keep unknown collision causes unknown and preserve complete local logs.
+Bound prompt memory, label omissions, and avoid duplicating simulated outcomes in
+choice criteria. Candidate end deltas reconstruct against the current state; keep
+every risk flag explicit.
 Optional guide phases can match area, swimming and maze_pass, and request a
 minimum_search_tier (0..2). Log such external assistance and keep local guides ignored.
 Room-scoped guides may declare initial_room, rooms and phase.room/next_room.

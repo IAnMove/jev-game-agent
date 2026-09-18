@@ -2,6 +2,8 @@
 import json
 from campaign_model import describe, recipes, pipes, guide_context
 from run import observe
+from death_memory import prompt_deaths
+from navigation import navigation_context
 
 
 def options(state):
@@ -25,6 +27,7 @@ def options(state):
 
 def request(state, choices, node, failures, history, visited, completed, allow_warps=False, guide=None, allow_risky=False):
     current = describe(state)
+    navigation = navigation_context(history, current, guide)
     def signature(item):
         return json.dumps(item['segments'], sort_keys=True)
     banned = {signature(choices[name]) for name in node['banned'] if name in choices}
@@ -39,12 +42,16 @@ def request(state, choices, node, failures, history, visited, completed, allow_w
         'controls': 'Arrows move. B runs or fires. A jumps; release A before a new jump. Holding A sustains height. Momentum persists. Down enters a pipe from its top; Right enters side pipes. Up climbs. In water pulse A to rise.',
         'current': current, 'observation': observe(state),
         'visible_enterable_pipes': pipes(state),
-        'external_walkthrough': guide_context(current, guide),
+        'external_walkthrough': guide_context(current, guide, history),
+        'navigation_memory': navigation,
         'completed_levels': completed, 'recent_path': history[-4:],
-        'previous_failed_attempts': [f for f in failures if f['from']['area'] == current['area']][-8:],
-        'banned_at_this_exact_checkpoint': node['banned'],
+        'previous_failed_attempts': [{k: v for k, v in f.items() if k != 'death_episode'}
+                                     for f in failures if f['from']['area'] == current['area']][-8:],
+        'banned_at_this_exact_checkpoint': {name: {k: v for k, v in f.items() if k != 'death_episode'}
+                                          for name, f in node['banned'].items()},
+        'recent_death_episodes': prompt_deaths(failures, current, navigation['current_room']),
         'retry_exhausted_options': bool(allow_risky),
-        'recovery': 'Actual death restores a checkpoint. Change timing or direction after a failed attempt. Maze repeats are navigation feedback, not death. Avoid standing still until the timer expires.',
+        'recovery': 'Actual death restores a checkpoint. Review recent_death_episodes: actual buttons and game frames before death, with position and velocity. Vary approach speed, takeoff timing, jump hold or braking, not just the final dying input. Do not infer a collision cause when unknown. Maze repeats are navigation feedback, not death. Avoid standing still until the timer expires.',
     }, 'questions': {'maneuver': {'type': 'choice',
         'instructions': 'Choose the next maneuver to survive and finish this area. Use current geometry, enemies, velocity and failures; outcomes have not been simulated.',
         'criteria': criteria}}}

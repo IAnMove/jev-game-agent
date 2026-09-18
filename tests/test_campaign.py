@@ -17,6 +17,38 @@ def state(**updates):
 
 
 class CampaignTests(unittest.TestCase):
+    def test_death_checkpoint_records_executed_inputs_separately_from_plan(self):
+        c = Campaign.__new__(Campaign)
+        c.state, c.summary, c.failures, c.event = {}, {'decisions': 1}, [], Mock()
+        before = dict(level='8-4', area='castle', x=100, feet_y=208, phase='grounded', timer=90)
+        after = before | {'x': 108, 'phase': 'descending', 'feet_y': 295}
+        node = {'id': 'root', 'parent': None, 'state': before, 'banned': {}}
+        c.nodes = {'root': node}
+        actual = [{'buttons': ['right'], 'frames': 4}]
+        planned = actual + [{'buttons': ['a'], 'frames': 20}]
+        c.route = [{'action': 'run', 'controller': 'Jev', 'before_state': before,
+                    'segments': actual, 'trajectory': [{'state': after}]}]
+        with patch('campaign.describe', return_value=after), patch('campaign.values', return_value={}):
+            c.death_checkpoint(node, 'run', 'death_routine', planned)
+        record = c.failures[-1]
+        self.assertEqual(record['executed_segments'], actual)
+        self.assertEqual(record['planned_segments'], planned)
+        self.assertEqual(record['death_episode']['frames_recorded'], 4)
+        self.assertEqual(record['death_episode']['controls'][0]['buttons'], ['right'])
+
+    def test_compact_predictions_reconstruct_end_and_keep_risk_without_duplicate_criteria(self):
+        current = dict(area='castle', x=100, feet_y=208, maze_correct=0, timer=100)
+        end = current | {'x': 120, 'timer': 99}
+        forecasts = {'jump': {'segments': [], 'outcome': {
+            'eligible': True, 'coast_failure': 'death_routine', 'end': end}}}
+        with patch('campaign_model.describe', return_value=current):
+            request = make_request({}, forecasts, {'banned': {}}, [], [], {}, [])
+        prediction = request['state']['candidate_outcomes']['jump']
+        self.assertEqual(current | prediction['end'], end)
+        self.assertEqual(prediction['coast_failure'], 'death_routine')
+        self.assertEqual(forecasts['jump']['outcome']['end'], end)
+        self.assertNotIn('death_routine', request['questions']['maneuver']['criteria']['jump'])
+
     def test_pipe_alignment_does_not_crouch_before_centering(self):
         target = {'target_player_x':280,'top':128}
         with patch('campaign_model.describe', return_value={'x':285,'feet_y':128,'vx_px_frame':0}):

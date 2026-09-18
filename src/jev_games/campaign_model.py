@@ -7,6 +7,7 @@ import shutil
 import time
 from gap_jump import visible_gap, GapJump
 from navigation import navigation_context, pipe_destination
+from death_memory import prompt_deaths
 
 from run import WATCH, values, observe, write
 from lookahead import fingerprint, compact, candidates
@@ -339,8 +340,9 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
                 item['outcome']['external_hint_distance'] = {
                     label: abs(end[field]-target[label])
                     for label, field in (('target_x', 'x'), ('target_feet_y', 'feet_y')) if label in target}
-            eligible[name] = json.dumps(item['outcome'], separators=(',', ':'))
-    nearby_failures = [f for f in failures if f['from']['area'] == current['area']][-8:]
+            eligible[name] = 'Execute this maneuver; its prediction is in state.candidate_outcomes under this exact name.'
+    nearby_failures = [{k: v for k, v in f.items() if k != 'death_episode'}
+                       for f in failures if f['from']['area'] == current['area']][-8:]
     return {'model': 'jev-latest', 'state': {
         'role': 'You are Mario campaign controller. Your choice executes immediately.',
         'recovery_policy': 'Maze loops and missed maze counters are navigation feedback, never automatic failures. Actual death/game over restores a checkpoint. Physical stalling is measured in executed game frames, not decision count. The game timer can expire normally.',
@@ -353,14 +355,21 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
         'visible_objects': observe(state)['objects'] if hint and state.get('ram') else None,
         'visible_enterable_pipes': pipes(state) if state.get('ram') else [],
         'warp_zone_help': 'A nonzero warp_zone_control enables warp pipes. In a warp room the exit is DOWN through a pipe, not the right wall. enter_visible_pipe skills simulate jumping, alignment and Down from the current RAM geometry. Prefer an eligible successful pipe entry over horizontal distance.',
-        'previous_failed_attempts': nearby_failures, 'banned_at_this_exact_checkpoint': node['banned'],
+        'previous_failed_attempts': nearby_failures,
+        'banned_at_this_exact_checkpoint': {name: {k: v for k, v in record.items() if k != 'death_episode'}
+                                           for name, record in node['banned'].items()},
+        'recent_death_episodes': prompt_deaths(failures, current, navigation['current_room']),
         'recent_path': history[-5:],
-        'candidate_outcomes': {k: v['outcome'] for k, v in forecasts.items()},
+        'candidate_end_encoding': 'Each candidate end contains only fields different from current. Copy current and override with end to reconstruct the predicted final state. All risk flags are explicit.',
+        'candidate_outcomes': {k: {**v['outcome'], 'end': {
+            field: value for field, value in v['outcome']['end'].items()
+            if field not in current or current[field] != value}} for k, v in forecasts.items()},
         'method': 'Exact emulator rollouts from a copied checkpoint. Generic pipe skills use RAM feedback for jump/alignment/Down; you choose among their simulated outcomes. Failed branches are excluded. Long-term safety is not guaranteed. After a failure the program restores a prior checkpoint and gives you this explicit failure memory; your model weights have not been updated.',
         'rules': [
             'Choose a coherent maneuver making progress towards completing the current area. Favor actual level/area completion, safe landing and forward progress.',
             'Use navigation_memory to identify your room, not horizontal X or a changed area_pointer. Prefer pipe entries with matches_guided_next_room=true. Reject known return pipes marked false; moving right alone is not maze progress.',
             'Learn from the provided failures: do NOT repeat the failed strategy through a different equivalent action. requires_immediate_replan means evaluate the next move immediately; a short prefix is not a full crossing. A gap_crossed landing has an explicit shorter coasting horizon, not a promise that waiting there is safe.',
+            'Review recent_death_episodes: these are actual controls before death, including the approach and velocity. Compare the whole sequence with candidate trajectories. Vary a relevant parameter (approach speed, takeoff timing, jump hold or braking), not just the last dying input. A death signal alone does not prove lava or enemy contact. Key durations are game frames, not API wait time.',
             'Compare destination height and novelty. Escape repeated locations with a different height, timing, retreat, pipe entry or waiting for a moving obstacle.',
             'In water, pulse A to swim upward, release to sink, steer right toward the exit pipe. In castles, a large backward X shift can be the game repeating a maze: change corridors and keep playing. No automatic restore follows from this observation.',
             'Down enters a vertical pipe when aligned on top. Right enters a side pipe. Up climbs a vine. B fires only when fire-powered and may need repeated presses.',

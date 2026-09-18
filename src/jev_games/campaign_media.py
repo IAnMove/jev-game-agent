@@ -18,6 +18,11 @@ def ass_time(seconds):
     return f'{n//360000}:{n//6000%60:02d}:{n//100%60:02d}.{n%100:02d}'
 
 
+def media_timeout(duration):
+    """Allow complete campaigns to encode; short chapters retain their old floor."""
+    return max(180, int(duration*3)+60)
+
+
 def finalize(chapter, events, start_timeline, end_timeline):
     chapter = Path(chapter).resolve()
     sources = list(chapter.glob('session*.nut'))
@@ -63,10 +68,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     vf = f'trim=start_frame={trim_frames},setpts=PTS-STARTPTS,scale=768:720:flags=neighbor,pad=768:800:0:0:black,ass=decisions.ass,format=yuv420p'
     af = f'atrim=start={float(trim_frames/fps)},asetpts=PTS-STARTPTS,apad,atrim=duration={duration}'
     command = ['ffmpeg', '-hide_banner', '-v', 'error', '-i', str(source), '-vf', vf, '-af', af,
-        '-c:v', 'libx264', '-crf', '18', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
         str(chapter/'decisions.mp4')]
     with (chapter/'conversion.log').open('w', encoding='utf-8') as log:
-        subprocess.run(command, cwd=chapter, stdout=log, stderr=log, check=True, timeout=180,
+        subprocess.run(command, cwd=chapter, stdout=log, stderr=log, check=True, timeout=media_timeout(duration),
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     metadata = probe(chapter/'decisions.mp4')
     output_video = next(s for s in metadata['streams'] if s['codec_type'] == 'video')
@@ -75,7 +80,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if not any(s['codec_type'] == 'audio' for s in metadata['streams']):
         raise RuntimeError('Chapter is missing audio')
     subprocess.run(['ffmpeg', '-hide_banner', '-v', 'error', '-i', str(chapter/'decisions.mp4'),
-        '-f', 'null', '-'], check=True, timeout=180, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        '-f', 'null', '-'], check=True, timeout=media_timeout(duration), creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     result = {'file': str((chapter/'decisions.mp4').resolve()), 'duration': duration,
         'timeline_start': start_timeline, 'timeline_end': end_timeline,
         'boot_frames_removed': trim_frames, 'video_decode_verified': True, 'has_audio': True,

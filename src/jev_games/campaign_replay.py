@@ -96,11 +96,19 @@ def main():
         result['error'] = str(exc)
     finally:
         backend.close()
-        if events:
-            result['video'] = finalize(out, events, start, state['timeline_frame'])
+        # Preserve completed replay checks even if the separate encoder fails.
+        result['video_status'] = 'encoding' if events else 'no_frames'
         write(out/'result.json', result)
+        if events:
+            try:
+                result['video'] = finalize(out, events, start, state['timeline_frame'])
+                result['video_status'] = 'verified' if result['video'] else 'no_frames'
+            except Exception as exc:
+                result['video_status'] = 'failed'
+                result['video_error'] = f'{type(exc).__name__}: {exc}'
+            write(out/'result.json', result)
         print(json.dumps(result), flush=True)
-    return 0 if result['status'] == 'verified_deterministic_replay' else 2
+    return 0 if result['status'] == 'verified_deterministic_replay' and result['video_status'] == 'verified' else 2
 
 
 if __name__ == '__main__':

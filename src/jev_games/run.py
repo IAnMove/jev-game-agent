@@ -77,9 +77,18 @@ def values(state):
     return {k: raw[k]["value"] for k in WATCH}
 
 
+class BridgeTimeoutError(RuntimeError):
+    """An unacknowledged emulator action; restart from a verified checkpoint."""
+
+
 class ReliableBackend(BizHawkBackend):
     def _send_action(self, payload, timeout=None):
-        state = super()._send_action(payload, timeout)
+        try:
+            state = super()._send_action(payload, timeout)
+        except TimeoutError as exc:
+            # Do not resend an action with an unknown outcome. The campaign's
+            # infrastructure recovery closes this emulator and loads a checkpoint.
+            raise BridgeTimeoutError(str(exc)) from exc
         if payload.get("type") == "quit":
             return state
         expected_id = self._next_action_id - 1

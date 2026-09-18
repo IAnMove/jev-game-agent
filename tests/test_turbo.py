@@ -1,9 +1,18 @@
 import unittest
 from unittest.mock import patch
 from turbo import options, request
+from run import ReliableBackend, BridgeTimeoutError
 
 
 class TurboTests(unittest.TestCase):
+    def test_emulator_timeout_is_not_a_campaign_budget_or_resend(self):
+        backend = ReliableBackend.__new__(ReliableBackend)
+        with patch('run.BizHawkBackend._send_action', side_effect=TimeoutError('command timeout')) as send:
+            with self.assertRaises(BridgeTimeoutError) as caught:
+                backend._send_action({'type': 'advance', 'advance_frames': 4})
+            self.assertNotIsInstance(caught.exception, TimeoutError)
+            self.assertEqual(send.call_count, 1)
+
     def test_options_preserve_inputs_and_never_invent_predictions(self):
         plan = [{'buttons': ['right'], 'frames': 1}, {'buttons': ['right', 'a'], 'frames': 9}]
         with patch('turbo.recipes', return_value={'jump': plan}):

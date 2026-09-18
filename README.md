@@ -187,6 +187,28 @@ The game timer runs normally; a timeout death restores the level entry rather
 than a checkpoint whose timer has already expired. Time/token budget stops and
 technical-error recovery remain separate from gameplay failures.
 
+For the shortest pauses, use **Turbo**:
+
+```powershell
+.\start.ps1 -Turbo
+# Or, on any platform (python3 on Unix):
+python start.py --turbo
+```
+
+Turbo asks Jev to choose controller recipes directly from current RAM, visible
+terrain and enemies. It launches **one emulator**, skips lookahead and does not
+filter predicted deaths. The game still pauses for the API response; this is not
+continuous real-time play and it may play worse. It retains four-frame executed
+RAM records, actual-death recovery, manual takeover, video/audio and deterministic
+replay verification. Moves stop on death, a game transition or the first landing
+after 12 frames. The viewer labels this mode **TURBO · DIRECT RAM**.
+
+`--turbo` also works with `jev.py play`, `--resume` and `--until-complete`.
+It is mutually exclusive with `--fast`. Default/full and `--fast` retain simulated
+outcomes. Turbo requests explicitly state that outcomes have not been predicted;
+its decisions are saved in `direct_options.json`, and `timing.json` reports zero
+simulation time. The modes are different experiments, not equivalent policies.
+
 For less work between moves, use `python start.py --fast` (`.\start.ps1 -Fast`
 on Windows), or add `--fast` to `jev.py play`. This tries a smaller initial
 candidate set and skips screenshots in the shadow emulator. It retains the same

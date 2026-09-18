@@ -22,6 +22,7 @@ from image_ascii import attach_ascii
 from live_view import LiveView
 from recovery import StallWatch
 from manual_control import ManualControl, ManualRequested
+import turbo
 
 
 class DeterminismError(RuntimeError):
@@ -78,7 +79,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -94,12 +95,13 @@ class Campaign:
             'engine_hashes': {name: hashlib.sha256(path.read_bytes()).hexdigest()
                               for name, path in engine_files().items()},
             'source_sha256': hashes, 'watches': WATCH, 'fast_search': args.fast,
+            'play_mode': 'turbo' if args.turbo else 'fast' if args.fast else 'full',
             'bounds': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, 'api_key_logged': False,
             'supplementary_watch': {'warp_zone': 0x6d6},
             'external_guide': self.guide,
             'ascii_observation': {'level': args.ascii_level, 'source': 'screenshot pixels only',
                                   'mode': 'background_contrast', 'columns': 64, 'rows': 30},
-            'assistance': 'Exact shadow rollouts, fatal-outcome filter, generic action library including RAM-feedback pipe alignment, Jev choice, failure memory and spatial checkpoint backtracking. Rewinds are allowed and logged.',
+            'assistance': 'Direct RAM decisions without lookahead; actual death recovery and recorded input hashes.' if args.turbo else 'Exact shadow rollouts, fatal-outcome filter, generic action library including RAM-feedback pipe alignment, Jev choice, failure memory and spatial checkpoint backtracking. Rewinds are allowed and logged.',
             'api': 'jev-latest; up to 3 HTTP attempts per round, then pause/retry for up to 15 minutes without advancing the emulator.'}
         write(self.out/'manifest.json', manifest)
         shutil.copyfile(Path(__file__).with_name('campaign_watch.html'), self.out/'watch.html')
@@ -130,7 +132,8 @@ class Campaign:
                 screenshot = self.player.paths.bridge_dir/'screen.png'
             self.live.publish(phase, self.summary, describe(self.state) if self.state else None,
                 screenshot=screenshot, buttons=buttons, event=event,
-                timeline_frame=self.state.get('timeline_frame') if self.state else None, **fields)
+                timeline_frame=self.state.get('timeline_frame') if self.state else None,
+                play_mode='turbo' if self.args.turbo else 'fast' if self.args.fast else 'full', **fields)
         except OSError:
             pass  # Telemetry has no authority over inputs, checkpoints or API calls.
 
@@ -140,6 +143,7 @@ class Campaign:
         current = read(self.out/'manifest.json')
         same_policy = (previous.get('policy') == current['policy']
                        and previous.get('fast_search', False) == current['fast_search']
+                       and previous.get('play_mode', 'full') == current['play_mode']
                        and previous.get('objective') == current['objective']
                        and previous.get('external_guide') == self.guide
                        and all(previous.get('source_sha256', {}).get(name) == current['source_sha256'][name]
@@ -361,22 +365,32 @@ class Campaign:
         actual = []
         trace = []
         baseline_lives = values(before)['lives']
+        airborne = values(before)['player_state'] != 0
+        elapsed = 0
         for i, segment in enumerate(segments):
             self.state = issue(self.player, segment)
             self.publish_live('human' if controller == 'Human' else 'executing', buttons=segment['buttons'], action=action,
                 controller=controller, segment_frames=segment['frames'], move=move_id)
             actual.append(segment)
+            elapsed += segment['frames']
             digest = fingerprint(self.state)
             same = expected is None or digest == expected[i]['ram_sha256']
             if expected is not None:
                 self.summary['parity_checks'] += 1
-            trace.append({'state': describe(self.state), 'ram_sha256': digest, 'matches_prediction': same})
+            trace.append({'state': describe(self.state), 'ram_sha256': digest, 'matches_prediction': same if expected is not None else None})
             self.summary['frames_executed'] += segment['frames']
+            self.summary['ram_samples'] = self.summary.get('ram_samples', 0)+1
             write(folder/'trace.json', trace)
             if not same:
                 raise DeterminismError(f'Execution diverged from forecast in move {move_id}')
             if death_reason(values(self.state), baseline_lives) or won(values(self.state)):
                 break
+            if controller == 'Jev Turbo':
+                r = values(self.state)
+                airborne |= r['player_state'] != 0
+                if (not playable(r) or (airborne and r['player_state'] == 0 and elapsed >= 12 and not r['swimming'])
+                        or self.control.read()[0] == 'human' or (self.out/'STOP').exists()):
+                    break
             if controller == 'automatic_transition' and playable(values(self.state)):
                 break
         write(folder/'after.json', self.state)
@@ -545,10 +559,11 @@ class Campaign:
                        from_node=self.current, to_node=self.args.resume_node)
             self.restore(self.args.resume_node, self.args.resume_reason)
             self.args.resume_node = None
-        self.shadow = campaign_backend(self.out/'shadow_runs'/f"{self.summary['technical_restarts']:03d}", fast=self.args.fast)
-        result = self.shadow.launch(self.rom)
-        if not result.ok:
-            raise RuntimeError(result.error)
+        if not self.args.turbo:
+            self.shadow = campaign_backend(self.out/'shadow_runs'/f"{self.summary['technical_restarts']:03d}", fast=self.args.fast)
+            result = self.shadow.launch(self.rom)
+            if not result.ok:
+                raise RuntimeError(result.error)
         if self.current is None:
             self.checkpoint()
         with httpx.Client(follow_redirects=False, headers={'Authorization': 'Bearer '+self.key}) as client:
@@ -591,13 +606,17 @@ class Campaign:
                 folder.mkdir(parents=True)
                 cycle_start = time.monotonic()
                 search_seconds = 0.0
-                self.publish_live('simulating', event='search_started', tier=node['tier'])
+                self.publish_live('preparing' if self.args.turbo else 'simulating', event='direct_options' if self.args.turbo else 'search_started', tier=node['tier'])
                 snapshot(self.player, folder, 'before', self.state)
                 shutil.copyfile(folder/'before.png', self.out/'latest.png')
+                build_request = turbo.request if self.args.turbo else make_request
                 while True:
-                    profile = 'fast' if self.args.fast else 'full'
+                    profile = 'turbo' if self.args.turbo else 'fast' if self.args.fast else 'full'
                     cache = Path(node['folder'])/f"forecast_{profile}_tier_{node['tier']}.json"
-                    if cache.exists():
+                    if self.args.turbo:
+                        forecasts = turbo.options(self.state)
+                        write(folder/'direct_options.json', forecasts)
+                    elif cache.exists():
                         forecasts = read(cache)
                         write(folder/'forecasts.json', forecasts)
                     else:
@@ -612,23 +631,23 @@ class Campaign:
                         search_seconds += elapsed
                         self.summary['forecast_seconds'] += elapsed
                         write(cache, forecasts)
-                    payload = make_request(self.state, forecasts, node, self.failures,
+                    payload = build_request(self.state, forecasts, node, self.failures,
                         self.history, self.visited, self.summary['completed_levels'], self.args.allow_warps, self.guide)
                     attach_ascii(payload, folder/'before.png', self.args.ascii_level, folder)
                     write(folder/'request.json', payload)
-                    if payload['questions']['maneuver']['criteria'] or node['tier'] >= 2:
+                    if payload['questions']['maneuver']['criteria'] or node['tier'] >= 2 or self.args.turbo:
                         break
                     node['tier'] += 1
                     self.event('search_expanded', node=node['id'], tier=node['tier'])
                 if forecasts is None or self.control.read()[0] == 'human':
                     continue
                 if not payload['questions']['maneuver']['criteria']:
-                    payload = make_request(self.state, forecasts, node, self.failures,
+                    payload = build_request(self.state, forecasts, node, self.failures,
                         self.history, self.visited, self.summary['completed_levels'],
                         self.args.allow_warps, self.guide, allow_risky=True)
                     attach_ascii(payload, folder/'before.png', self.args.ascii_level, folder)
                     write(folder/'request.json', payload)
-                    self.event('risk_fallback', reason='No safe untried candidate; continue actual play, do not rewind a prediction.')
+                    self.event('risk_fallback', reason='All direct recipes have failed here; Jev retries with failure memory.' if self.args.turbo else 'No safe untried candidate; continue actual play, do not rewind a prediction.')
                 self.persist()
                 api_start = time.monotonic()
                 try:
@@ -645,13 +664,14 @@ class Campaign:
                 old = self.state
                 chosen = forecasts[choice]
                 write(folder/'chosen.json', {'choice': choice, 'outcome': chosen['outcome']})
+                frames_before = self.summary['frames_executed']
                 failure = self.move(chosen['segments'], choice,
-                    'Jev+ASCII' if 'screen_ascii' in payload['state'] else 'Jev', chosen['trajectory'])
+                    'Jev Turbo' if self.args.turbo else 'Jev+ASCII' if 'screen_ascii' in payload['state'] else 'Jev', chosen['trajectory'])
                 if not failure:
                     failure = self.transition()
                 write(folder/'timing.json', {'profile': profile, 'search_seconds': search_seconds,
                     'api_seconds': api_seconds, 'cycle_seconds_through_execution': time.monotonic()-cycle_start,
-                    'candidates': len(forecasts), 'executed_frames': sum(s['frames'] for s in chosen['segments']),
+                    'candidates': len(forecasts), 'executed_frames': self.summary['frames_executed']-frames_before,
                     'failure': failure})
                 if failure:
                     if death_reason(values(self.state), values(old)['lives']):
@@ -673,7 +693,7 @@ class Campaign:
                     self.remember_failure(node, choice, 'unexpected_level_skip')
                     self.restore(node['id'], 'unexpected_level_skip')
                     continue
-                played_frames = sum(s['frames'] for s in chosen['segments'])
+                played_frames = self.summary['frames_executed']-frames_before
                 stalled = self.stall_watch.observe(describe(old), now, played_frames)
                 if stalled:
                     self.event('physical_stall', executed_window_frames=self.args.stuck_frames,
@@ -783,7 +803,9 @@ def main():
     parser.add_argument('--max-rewinds', type=int, default=500)
     parser.add_argument('--max-input-tokens', type=int, default=8000000)
     parser.add_argument('--chapter-decisions', type=int, default=30)
-    parser.add_argument('--fast', action='store_true', help='Fewer initial candidates and no shadow PNGs; same RAM parity checks, full fallback search')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--turbo', action='store_true', help='Direct RAM decisions without lookahead: shorter pauses, no predicted-death filter')
+    modes.add_argument('--fast', action='store_true', help='Fewer initial candidates and no shadow PNGs; same RAM parity checks, full fallback search')
     parser.add_argument('--stuck-frames', type=int, default=600, help='Executed frames in one 24px area before stall recovery; 0 disables it')
     parser.add_argument('--resume', type=Path, help='Fork a stopped campaign; budgets remain cumulative')
     parser.add_argument('--allow-warps', action='store_true')

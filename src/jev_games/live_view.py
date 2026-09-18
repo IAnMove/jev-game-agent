@@ -44,7 +44,7 @@ class LiveView:
                     'buttons': list(buttons), 'state': state, 'events': self.events,
                     'summary': {key: summary.get(key) for key in (
                         'status', 'decisions', 'rewinds', 'input_tokens', 'output_tokens',
-                        'actual_model', 'completed_levels', 'frames_executed', 'parity_checks')}, **fields}
+                        'actual_model', 'completed_levels', 'frames_executed', 'parity_checks', 'ram_samples')}, **fields}
         write(self.folder/'live.json', json.loads(self.redact(document)))
 
     def redact(self, value):

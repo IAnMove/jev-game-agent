@@ -52,6 +52,8 @@ claiming a completed game; partial routes can also replay successfully.
 - `src/jev_games/run.py`: RAM observations, API transport and backend helpers.
 - `campaign_model.py`: SMB actions, outcomes, guide context and terminal rules.
 - `campaign.py`: simulations, Jev decisions, failure memory and checkpoints.
+- `turbo.py`: direct RAM option selection, without a shadow emulator or predicted outcomes.
+  Never label these options as simulated/safe; preserve actual-input replay hashes.
 - `campaign_media.py`, `campaign_replay.py`: video capture and deterministic replay.
 - `live_view.py`, `campaign_watch.html`: telemetry and the browser dashboard.
 - `manual_control.py`: validated browser intent and input heartbeat expiration.

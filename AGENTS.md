@@ -86,6 +86,8 @@ plan tails. Keep unknown collision causes unknown and preserve complete local lo
 Bound prompt memory, label omissions, and avoid duplicating simulated outcomes in
 choice criteria. Candidate end deltas reconstruct against the current state; keep
 every risk flag explicit.
+SMB metatiles 0x5f/0x60 are hidden blocks, not solid landing surfaces before
+activation. Expose them separately as RAM assistance; do not call them visible.
 Optional guide phases can match area, swimming and maze_pass, and request a
 minimum_search_tier (0..2). Log such external assistance and keep local guides ignored.
 Room-scoped guides may declare initial_room, rooms and phase.room/next_room.

@@ -195,6 +195,9 @@ unknown; this is contextual memory, not model training. Full episodes remain in
 the local logs; prompts include at most two relevant episodes and the last 24
 control changes per episode, with omissions labelled. Simulated outcomes appear
 once, with final states encoded as changes from the current state to save context.
+Hidden blocks are reported separately from solid landing surfaces: they must be
+hit from below before Mario can use them as steps. Their positions come from RAM,
+including blocks that are still invisible on screen.
 
 For the shortest pauses, use **Turbo**:
 

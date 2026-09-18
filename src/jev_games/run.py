@@ -127,13 +127,20 @@ def observe(state, previous=None, buttons=None):
     # Two 16x13 block buffers alternate by world page; row zero starts at y=32.
     terrain = []
     flags = []
+    hidden_blocks = []
     for row in range(13):
         segment = None
         for col in range(camera // 16, (camera + 255) // 16 + 1):
             index = ((col // 16) % 2) * 208 + row * 16 + col % 16
             tile = r[f"tile{index}"]
             # Coins and climbable pole/vine tiles are not solid obstacles.
-            solid = tile != 0 and tile not in (0x24, 0x25, 0x26, 0xc2, 0xc3)
+            solid = tile != 0 and tile not in (0x24, 0x25, 0x26, 0x5f, 0x60, 0xc2, 0xc3)
+            # ChkInvisibleMTiles: these blocks must first be hit from below.
+            # Exposing their RAM position is assistance, not pixel perception.
+            if tile in (0x5f, 0x60):
+                hidden_blocks.append({'rect': [col*16, row*16+32, col*16+16, row*16+48],
+                                      'kind': 'hidden_coin' if tile == 0x5f else 'hidden_1up',
+                                      'instruction': 'Hit from below to reveal; not yet a solid landing step.'})
             if tile in (0x24, 0x25):
                 flags.append([col * 16, row * 16 + 32])
             if solid:
@@ -159,6 +166,7 @@ def observe(state, previous=None, buttons=None):
                       "vx_raw": signed(r["vx"]), "vy_raw": signed(r["vy"]),
                       "measured_velocity": delta},
             "objects": enemies, "solid_rectangles_xyxy": terrain,
+            "hidden_blocks_from_ram": hidden_blocks,
             "flagpole_tiles_xy": flags, "previous_buttons": buttons or [],
             "engine_routine": r["routine"], "lives_counter": r["lives"]}
 

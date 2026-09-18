@@ -43,7 +43,9 @@ def pipe_controls(state, target, elapsed):
         buttons.append('right')
     elif vx > desired+0.15:
         buttons.append('left')
-    if abs(dx) <= 6 and abs(d['feet_y']-target['top']) <= 2:
+    # Down can lock horizontal movement before both feet straddle the pipe seam.
+    # Finish alignment first; otherwise the feedback loop can hold Left+Down forever.
+    if abs(dx) <= 1 and abs(vx) <= 0.25 and abs(d['feet_y']-target['top']) <= 2:
         buttons.append('down')
     elif elapsed > 0 and elapsed <= 36 and d['feet_y'] > target['top']-48:
         buttons.append('a')

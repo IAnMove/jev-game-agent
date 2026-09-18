@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from campaign_model import death_reason, won, playable, make_request, pipes
+from campaign_model import death_reason, won, playable, make_request, pipes, pipe_controls
 from run import WATCH
 from campaign_model import guide_context, novelty_cell
 from pathlib import Path
@@ -17,6 +17,15 @@ def state(**updates):
 
 
 class CampaignTests(unittest.TestCase):
+    def test_pipe_alignment_does_not_crouch_before_centering(self):
+        target = {'target_player_x':280,'top':128}
+        with patch('campaign_model.describe', return_value={'x':285,'feet_y':128,'vx_px_frame':0}):
+            buttons = pipe_controls({},target,60)['buttons']
+            self.assertIn('left',buttons)
+            self.assertNotIn('down',buttons)
+        with patch('campaign_model.describe', return_value={'x':280,'feet_y':128,'vx_px_frame':0}):
+            self.assertEqual(pipe_controls({},target,60)['buttons'],['down'])
+
     def test_repeated_death_skips_airborne_area_change_to_grounded_takeoff(self):
         c = Campaign.__new__(Campaign)
         c.state, c.summary, c.failures, c.event = {}, {'decisions': 1}, [], Mock()

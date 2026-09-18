@@ -204,21 +204,30 @@ replay verification. Moves stop on death, a game transition or the first landing
 after 12 frames. The viewer labels this mode **TURBO · DIRECT RAM**.
 
 `--turbo` also works with `jev.py play`, `--resume` and `--until-complete`.
-It is mutually exclusive with `--fast`. Default/full and `--fast` retain simulated
+It is mutually exclusive with `--fast` and `--full`. Fast (the default) and Full retain simulated
 outcomes. Turbo requests explicitly state that outcomes have not been predicted;
 its decisions are saved in `direct_options.json`, and `timing.json` reports zero
 simulation time. The modes are different experiments, not equivalent policies.
 
-For less work between moves, use `python start.py --fast` (`.\start.ps1 -Fast`
-on Windows), or add `--fast` to `jev.py play`. This tries a smaller initial
+**Fast is the default** in both launchers and `jev.py play`. On Windows, simply use
+`.\start.ps1 -Port 8771`; both `-Fast` and `--fast` are also accepted. Fast tries a smaller initial
 candidate set and skips screenshots in the shadow emulator. It retains the same
-four-frame RAM checks, predicted-death filtering, coasting horizon, recorded-player
-images and full search expansion when the initial options are exhausted.
+four-frame RAM checks, predicted-death filtering, recorded-player
+images and full search expansion when the initial options are exhausted or offer no useful movement.
 It can choose different moves and miss useful initial alternatives. It is **not
 a real-time guarantee**: simulation, file I/O and API waits still pause gameplay.
 Per-decision `timing.json` separates search, API and total time through execution.
-The default retains the full initial search. Recordings/replay play at game speed;
+Use `python start.py --full` (`.\start.ps1 -Full`) for the full initial search.
+Recordings/replay play at game speed;
 that playback speed should not be described as live decision speed.
+
+Lookahead also offers complete run-up jumps for visible gaps: the program derives
+the runway and edge from collision RAM, simulates retreating, sprinting and jumping
+at the edge, optionally braking for landing, and lets Jev choose among the resulting maneuvers. These are explicit
+programmed skills, not actions invented by Jev. Their inputs and outcomes are logged.
+After a successful gap crossing, the neutral safety probe covers eight frames
+and the next decision starts at the landing. Other ground maneuvers retain the
+32-frame probe. Each outcome reports its horizon; this is not long-term safety.
 
 To launch play and its browser view together, add `--watch` to the play command:
 

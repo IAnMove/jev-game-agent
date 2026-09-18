@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--container', action='store_true', help='Run the Linux x64 emulator through Docker')
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--turbo', action='store_true', help='Direct Jev decisions without lookahead; faster but may play worse')
+    modes.add_argument('--full', action='store_true', help='Use the full initial lookahead instead of the default fast mode')
     modes.add_argument('--fast', action='store_true', help='Reduce initial lookahead work; may choose different moves')
     parser.add_argument('--until-complete', action='store_true', help='Continue until victory or STOP without usage/time caps')
     parser.add_argument('--stuck-frames', type=int, default=600, help='Stationary game frames before recovery; 0 disables this trigger')
@@ -39,6 +40,7 @@ def main():
     parser.add_argument('--rom')
     parser.add_argument('--emulator')
     args = parser.parse_args()
+    args.fast = not (args.turbo or args.full)
     if not 1 <= args.port <= 65535:
         parser.error('Port must be 1..65535')
     if args.stuck_frames < 0:
@@ -72,6 +74,8 @@ def main():
             command += ['--until-complete']
         if args.turbo:
             command += ['--turbo']
+        if args.full:
+            command += ['--full']
         if args.fast:
             command += ['--fast']
         command += ['--stuck-frames', str(args.stuck_frames), '--watch', '--port', str(args.port), '--allow-warps', '--wall-seconds', '600',

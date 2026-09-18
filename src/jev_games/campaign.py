@@ -23,6 +23,7 @@ from live_view import LiveView
 from recovery import StallWatch
 from manual_control import ManualControl, ManualRequested
 import turbo
+from gap_jump import has_useful_option
 
 
 class DeterminismError(RuntimeError):
@@ -79,7 +80,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -101,7 +102,7 @@ class Campaign:
             'external_guide': self.guide,
             'ascii_observation': {'level': args.ascii_level, 'source': 'screenshot pixels only',
                                   'mode': 'background_contrast', 'columns': 64, 'rows': 30},
-            'assistance': 'Direct RAM decisions without lookahead; actual death recovery and recorded input hashes.' if args.turbo else 'Exact shadow rollouts, fatal-outcome filter, generic action library including RAM-feedback pipe alignment, Jev choice, failure memory and spatial checkpoint backtracking. Rewinds are allowed and logged.',
+            'assistance': 'Direct RAM decisions without lookahead; actual death recovery and recorded input hashes.' if args.turbo else 'Exact shadow rollouts, fatal-outcome filter, generic action library including RAM-feedback pipe alignment and run-up gap jumps, Jev choice, failure memory and spatial checkpoint backtracking. Gap landings use an explicit 8-frame coasting probe and immediate replanning. Rewinds are allowed and logged.',
             'api': 'jev-latest; up to 3 HTTP attempts per round, then pause/retry for up to 15 minutes without advancing the emulator.'}
         write(self.out/'manifest.json', manifest)
         shutil.copyfile(Path(__file__).with_name('campaign_watch.html'), self.out/'watch.html')
@@ -147,7 +148,7 @@ class Campaign:
                        and previous.get('objective') == current['objective']
                        and previous.get('external_guide') == self.guide
                        and all(previous.get('source_sha256', {}).get(name) == current['source_sha256'][name]
-                               for name in ('campaign_model.py', 'run.py', 'lookahead.py')))
+                               for name in ('campaign_model.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
         for field in ('rom_sha256', 'engine_hashes', 'config_sha256', 'watches'):
             if previous[field] != current[field]:
                 raise DeterminismError(f'Resume {field} mismatch')
@@ -635,7 +636,8 @@ class Campaign:
                         self.history, self.visited, self.summary['completed_levels'], self.args.allow_warps, self.guide)
                     attach_ascii(payload, folder/'before.png', self.args.ascii_level, folder)
                     write(folder/'request.json', payload)
-                    if payload['questions']['maneuver']['criteria'] or node['tier'] >= 2 or self.args.turbo:
+                    if (node['tier'] >= 2 or self.args.turbo or
+                            has_useful_option(self.state, forecasts, payload['questions']['maneuver']['criteria'])):
                         break
                     node['tier'] += 1
                     self.event('search_expanded', node=node['id'], tier=node['tier'])
@@ -805,6 +807,7 @@ def main():
     parser.add_argument('--chapter-decisions', type=int, default=30)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--turbo', action='store_true', help='Direct RAM decisions without lookahead: shorter pauses, no predicted-death filter')
+    modes.add_argument('--full', action='store_true', help='Use the full initial lookahead instead of the default fast mode')
     modes.add_argument('--fast', action='store_true', help='Fewer initial candidates and no shadow PNGs; same RAM parity checks, full fallback search')
     parser.add_argument('--stuck-frames', type=int, default=600, help='Executed frames in one 24px area before stall recovery; 0 disables it')
     parser.add_argument('--resume', type=Path, help='Fork a stopped campaign; budgets remain cumulative')
@@ -816,6 +819,7 @@ def main():
     parser.add_argument('--trial-level', help='Stop the experiment after leaving this level')
     parser.add_argument('--trial-decisions', type=int, default=0, help='Optional new-decision limit, excluding inherited work')
     args = parser.parse_args()
+    args.fast = not (args.turbo or args.full)
     if args.stuck_frames < 0:
         parser.error('stuck-frames must be nonnegative')
     if not 1 <= args.wall_seconds <= 86400 or not 1 <= args.max_decisions <= 10000 or not 1 <= args.max_rewinds <= 2000:

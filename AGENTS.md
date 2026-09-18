@@ -45,7 +45,7 @@ claiming a completed game; partial routes can also replay successfully.
 ## Source layout
 
 - `jev.py`: CLI, local asset configuration, checks and localhost viewer.
-- `start.ps1`: interactive Windows launcher with hidden API-key input.
+- `start.ps1`: Windows argument forwarding; accepts PowerShell and GNU-style switches.
 - `start.py`, `start.sh`: portable native/container launchers.
 - `env_config.py`: literal .env loading; no shell evaluation or interpolation.
 - `Dockerfile`, `container-entry.sh`: Linux virtual display and runtime; no emulator or game.
@@ -54,6 +54,7 @@ claiming a completed game; partial routes can also replay successfully.
 - `campaign.py`: simulations, Jev decisions, failure memory and checkpoints.
 - `turbo.py`: direct RAM option selection, without a shadow emulator or predicted outcomes.
   Never label these options as simulated/safe; preserve actual-input replay hashes.
+- `gap_jump.py`: RAM-derived run-up and edge-jump skills, simulated before Jev selects them.
 - `campaign_media.py`, `campaign_replay.py`: video capture and deterministic replay.
 - `live_view.py`, `campaign_watch.html`: telemetry and the browser dashboard.
 - `manual_control.py`: validated browser intent and input heartbeat expiration.

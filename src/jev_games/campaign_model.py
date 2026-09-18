@@ -5,6 +5,7 @@ RAM symbols verified against smbdis_reference.txt. Optional external hints are e
 import json
 import shutil
 import time
+from gap_jump import visible_gap, GapJump
 
 from run import WATCH, values, observe, write
 from lookahead import fingerprint, compact, candidates
@@ -188,6 +189,10 @@ class CampaignPlanner:
             library = {name: plan for name, plan in library.items() if name in keep}
         targets = {f'enter_visible_pipe_{p["left"]}_{p["top"]}': p for p in pipes(state)}
         library.update({name: None for name in targets})
+        gap = visible_gap(state)
+        gap_skills = {f'runup_gap_jump_{runup}'+('_brake' if brake else ''): (runup, brake)
+                      for runup, brake in ((0, False), (48, False), (48, True), (80, True))} if gap else {}
+        library.update({name: None for name in gap_skills})
         for name, plan in library.items():
             interrupt()
             if time.monotonic() >= deadline:
@@ -200,8 +205,12 @@ class CampaignPlanner:
             airborne = not observe(state)['mario']['grounded']
             failure = None
             stop = False
+            gap_skill = GapJump(gap, gap_skills[name][0], brake_landing=gap_skills[name][1]) if name in gap_skills else None
             def parts():
-                if name in targets:
+                if gap_skill:
+                    while elapsed < 240:
+                        yield gap_skill.controls(current, elapsed)
+                elif name in targets:
                     while elapsed < 120:
                         yield pipe_controls(current, targets[name], elapsed)
                 else:
@@ -233,9 +242,13 @@ class CampaignPlanner:
             end_state = current
             end = describe(current)
             tail_failure = None
+            gap_crossed = bool(gap_skill and end['x'] >= gap['landing_x']
+                               and values(end_state)['player_state'] == 0 and not failure)
+            coast_frames = 8 if start['swimming'] or gap_crossed else 32
             # Neutral coasting is conservative. Swimming requires frequent strokes.
+            # A completed gap landing is another decision point, not a 32-frame wait.
             if not failure and playable(values(current)):
-                for _ in range(2 if start['swimming'] else 8):
+                for _ in range(coast_frames//4):
                     current = b.advance(4)
                     tail_failure = death_reason(values(current), start['lives'])
                     if tail_failure or not playable(values(current)):
@@ -243,6 +256,7 @@ class CampaignPlanner:
             result = {'segments': segments, 'trajectory': path,
                       'outcome': {'eligible': not failure and not tail_failure,
                          'failure': failure, 'coast_failure': tail_failure,
+                         'coasting_horizon_frames': coast_frames,
                          'frames': elapsed, 'progress_px': end['x']-start_d['x'],
                          'level_delta': rank(values(end_state))-rank(start),
                          'area_changed': end['area'] != start_d['area'],
@@ -253,6 +267,11 @@ class CampaignPlanner:
                     pipe_entry_started=values(end_state)['routine'] == 3,
                     assistance='Generic RAM feedback alignment simulated by the program; exact resulting inputs replayed if Jev selects this option.')
             results[name] = result
+            if gap_skill:
+                result['outcome'].update(gap=gap, launch_speed_px_frame=gap_skill.launch_speed,
+                    brake_landing=gap_skill.brake_landing,
+                    gap_crossed=gap_crossed, requires_immediate_replan=gap_crossed,
+                    assistance='RAM-derived retreat, sprint and edge jump, simulated before selection. Jev chooses the complete maneuver; no fixed level coordinates.')
             # Replanning sooner can avoid a death predicted only after a long move.
             # This is offered transparently as a distinct short action at tier 2.
             if tier >= 2 and (failure or tail_failure) and len(path) >= 3:
@@ -263,6 +282,8 @@ class CampaignPlanner:
                         'frames': sum(s['frames'] for s in segments[:2]),
                         'progress_px': prefix[-1]['state']['x']-start_d['x'],
                         'end': prefix[-1]['state'], 'level_delta': 0, 'area_changed': False}
+                    if gap_skill:
+                        outcome.update(gap_crossed=False, launch_speed_px_frame=None)
                     results[name+'_short_prefix'] = {'segments': segments[:2], 'trajectory': prefix,
                         'outcome': outcome, 'end_ram_sha256': prefix[-1]['ram_sha256']}
             write(folder/'forecasts.json', results)
@@ -325,7 +346,7 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
         'method': 'Exact emulator rollouts from a copied checkpoint. Generic pipe skills use RAM feedback for jump/alignment/Down; you choose among their simulated outcomes. Failed branches are excluded. Long-term safety is not guaranteed. After a failure the program restores a prior checkpoint and gives you this explicit failure memory; your model weights have not been updated.',
         'rules': [
             'Choose a coherent maneuver making progress towards completing the current area. Favor actual level/area completion, safe landing and forward progress.',
-            'Learn from the provided failures: do NOT repeat the failed strategy through a different equivalent action. A short prefix flagged requires_immediate_replan is an emergency option, not a safe full crossing.',
+            'Learn from the provided failures: do NOT repeat the failed strategy through a different equivalent action. requires_immediate_replan means evaluate the next move immediately; a short prefix is not a full crossing. A gap_crossed landing has an explicit shorter coasting horizon, not a promise that waiting there is safe.',
             'Compare destination height and novelty. Escape repeated locations with a different height, timing, retreat, pipe entry or waiting for a moving obstacle.',
             'In water, pulse A to swim upward, release to sink, steer right toward the exit pipe. In castles, a large backward X shift can be the game repeating a maze: change corridors and keep playing. No automatic restore follows from this observation.',
             'Down enters a vertical pipe when aligned on top. Right enters a side pipe. Up climbs a vine. B fires only when fire-powered and may need repeated presses.',

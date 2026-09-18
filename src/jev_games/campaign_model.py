@@ -8,6 +8,7 @@ import time
 from gap_jump import visible_gap, GapJump
 from navigation import navigation_context, pipe_destination
 from death_memory import prompt_deaths
+from platform_skills import targets as platform_targets, PlatformSkill, revealed_blocks, landed_on
 
 from run import WATCH, values, observe, write
 from lookahead import fingerprint, compact, candidates
@@ -47,8 +48,8 @@ def pipe_controls(state, target, elapsed):
         buttons.append('left')
     # Down can lock horizontal movement before both feet straddle the pipe seam.
     # Finish alignment first; otherwise the feedback loop can hold Left+Down forever.
-    if abs(dx) <= 1 and abs(vx) <= 0.25 and abs(d['feet_y']-target['top']) <= 2:
-        buttons.append('down')
+    if abs(dx) < 0.5 and abs(vx) <= 0.125 and abs(d['feet_y']-target['top']) <= 2:
+        buttons = ['down']
     elif elapsed > 0 and elapsed <= 36 and d['feet_y'] > target['top']-48:
         buttons.append('a')
     return {'buttons': buttons, 'frames': 1 if abs(dx) < 16 else 4}
@@ -197,6 +198,8 @@ class CampaignPlanner:
         gap_skills = {f'runup_gap_jump_{runup}'+('_brake' if brake else ''): (runup, brake)
                       for runup, brake in ((0, False), (48, False), (48, True), (80, True))} if gap else {}
         library.update({name: None for name in gap_skills})
+        platform_options = platform_targets(state) if not start['swimming'] else {}
+        library.update({name: None for name in platform_options})
         for name, plan in library.items():
             interrupt()
             if time.monotonic() >= deadline:
@@ -210,8 +213,12 @@ class CampaignPlanner:
             failure = None
             stop = False
             gap_skill = GapJump(gap, gap_skills[name][0], brake_landing=gap_skills[name][1]) if name in gap_skills else None
+            platform_skill = PlatformSkill(platform_options[name]) if name in platform_options else None
             def parts():
-                if gap_skill:
+                if platform_skill:
+                    while elapsed < 200:
+                        yield platform_skill.controls(current, elapsed)
+                elif gap_skill:
                     while elapsed < 240:
                         yield gap_skill.controls(current, elapsed)
                 elif name in targets:
@@ -267,6 +274,11 @@ class CampaignPlanner:
                          'area_changed': end['area'] != start_d['area'],
                          'maze_correct_delta': end['maze_correct']-start_d['maze_correct'],
                          'end': end}, 'end_ram_sha256': fingerprint(end_state)}
+            result['outcome']['revealed_hidden_blocks'] = revealed_blocks(state, end_state) if playable(values(end_state)) else []
+            if platform_skill:
+                result['outcome'].update(platform_target=platform_options[name],
+                    landed_on_target=landed_on(end_state, platform_options[name]),
+                    assistance='Generic RAM feedback alignment, run-up or direct jump, and landing control. Simulated first; Jev selects exact replayed inputs.')
             if name in targets:
                 result['outcome'].update(target_pipe=targets[name],
                     pipe_entry_started=values(end_state)['routine'] == 3,
@@ -289,6 +301,7 @@ class CampaignPlanner:
                         'end': prefix[-1]['state'], 'level_delta': 0, 'area_changed': False}
                     if gap_skill:
                         outcome.update(gap_crossed=False, launch_speed_px_frame=None)
+                    outcome.update(revealed_hidden_blocks=[], landed_on_target=False)
                     results[name+'_short_prefix'] = {'segments': segments[:2], 'trajectory': prefix,
                         'outcome': outcome, 'end_ram_sha256': prefix[-1]['ram_sha256']}
             write(folder/'forecasts.json', results)
@@ -371,6 +384,7 @@ def make_request(state, forecasts, node, failures, history, visited, completed, 
             'Use navigation_memory to identify your room, not horizontal X or a changed area_pointer. Prefer pipe entries with matches_guided_next_room=true. Reject known return pipes marked false; moving right alone is not maze progress.',
             'Learn from the provided failures: do NOT repeat the failed strategy through a different equivalent action. requires_immediate_replan means evaluate the next move immediately; a short prefix is not a full crossing. A gap_crossed landing has an explicit shorter coasting horizon, not a promise that waiting there is safe.',
             'Review recent_death_episodes: these are actual controls before death, including the approach and velocity. Compare the whole sequence with candidate trajectories. Vary a relevant parameter (approach speed, takeoff timing, jump hold or braking), not just the last dying input. A death signal alone does not prove lava or enemy contact. Key durations are game frames, not API wait time.',
+            'For hidden steps prefer a simulated revealed_hidden_blocks result, then landed_on_target on that block, then the higher pipe. Repeating a vertical jump with unchanged position and no revealed block is not progress. Use the simulated feedback skills to align and cancel inertia before jumping. Prefer verified subgoal completion over the name of a move.',
             'Compare destination height and novelty. Escape repeated locations with a different height, timing, retreat, pipe entry or waiting for a moving obstacle.',
             'In water, pulse A to swim upward, release to sink, steer right toward the exit pipe. In castles, a large backward X shift can be the game repeating a maze: change corridors and keep playing. No automatic restore follows from this observation.',
             'Down enters a vertical pipe when aligned on top. Right enters a side pipe. Up climbs a vine. B fires only when fire-powered and may need repeated presses.',

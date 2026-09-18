@@ -83,7 +83,7 @@ class Campaign:
             'moves': 0, 'rewinds': 0, 'deaths': 0, 'technical_restarts': 0,
             'parity_checks': 0, 'frames_executed': 0, 'input_tokens': 0, 'output_tokens': 0,
             'completed_levels': [], 'chapters': 0, 'forecast_seconds': 0.0}
-        sources = ['death_memory.py', 'navigation.py', 'gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
+        sources = ['platform_skills.py', 'death_memory.py', 'navigation.py', 'gap_jump.py', 'turbo.py', 'manual_control.py', 'recovery.py', 'campaign.py', 'campaign_model.py', 'campaign_media.py', 'campaign_replay.py',
                    'run.py', 'lookahead.py', 'run_lookahead.py', 'prompt_experiment.py', 'image_ascii.py', 'runtime.py', 'live_view.py']
         hashes = {}
         (self.out/'sources').mkdir()
@@ -151,7 +151,7 @@ class Campaign:
                        and previous.get('objective') == current['objective']
                        and previous.get('external_guide') == self.guide
                        and all(previous.get('source_sha256', {}).get(name) == current['source_sha256'][name]
-                               for name in ('campaign_model.py', 'death_memory.py', 'navigation.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
+                               for name in ('campaign_model.py', 'platform_skills.py', 'death_memory.py', 'navigation.py', 'gap_jump.py', 'run.py', 'lookahead.py')))
         for field in ('rom_sha256', 'engine_hashes', 'config_sha256', 'watches'):
             if previous[field] != current[field]:
                 raise DeterminismError(f'Resume {field} mismatch')

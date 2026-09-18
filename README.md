@@ -198,6 +198,12 @@ once, with final states encoded as changes from the current state to save contex
 Hidden blocks are reported separately from solid landing surfaces: they must be
 hit from below before Mario can use them as steps. Their positions come from RAM,
 including blocks that are still invisible on screen.
+Fast and Full also simulate local feedback maneuvers to align under a hidden
+block and reveal it, or build momentum and land on a narrow raised platform.
+Jev chooses among the resulting predictions, including explicit block activation
+and landing outcomes. These skills derive targets from RAM geometry; they do not
+contain a fixed sequence for a particular level. Pipe entry finishes centering
+before pressing Down. Turbo continues to use direct control recipes.
 
 For the shortest pauses, use **Turbo**:
 

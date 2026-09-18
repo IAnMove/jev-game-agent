@@ -57,6 +57,8 @@ class CampaignTests(unittest.TestCase):
             self.assertNotIn('down',buttons)
         with patch('campaign_model.describe', return_value={'x':280,'feet_y':128,'vx_px_frame':0}):
             self.assertEqual(pipe_controls({},target,60)['buttons'],['down'])
+        with patch('campaign_model.describe', return_value={'x':279,'feet_y':128,'vx_px_frame':0}):
+            self.assertEqual(pipe_controls({},target,60)['buttons'],['right'])
 
     def test_repeated_death_skips_airborne_area_change_to_grounded_takeoff(self):
         c = Campaign.__new__(Campaign)

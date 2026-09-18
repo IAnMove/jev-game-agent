@@ -54,5 +54,6 @@ def has_useful_option(state, forecasts, criteria):
     feet = observe(state)['mario']['feet_y']
     return any(
         o.get('progress_px', 0) >= 24 or o.get('level_delta', 0) > 0 or o.get('area_changed')
-        or o.get('pipe_entry_started') or abs(o.get('end', {}).get('feet_y', feet)-feet) >= 16
+        or o.get('pipe_entry_started') or o.get('revealed_hidden_blocks') or o.get('landed_on_target')
+        or abs(o.get('end', {}).get('feet_y', feet)-feet) >= 16
         for name in criteria for o in [forecasts[name]['outcome']])

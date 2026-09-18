@@ -55,6 +55,7 @@ claiming a completed game; partial routes can also replay successfully.
 - `turbo.py`: direct RAM option selection, without a shadow emulator or predicted outcomes.
   Never label these options as simulated/safe; preserve actual-input replay hashes.
 - `gap_jump.py`: RAM-derived run-up and edge-jump skills, simulated before Jev selects them.
+- `platform_skills.py`: simulated hidden-block activation and raised-platform landings.
 - `navigation.py`: observed pipe destinations and room memory reconstructed from checkpoint history.
 - `death_memory.py`: factual pre-death input sequences and bounded prompt summaries.
 - `campaign_media.py`, `campaign_replay.py`: video capture and deterministic replay.
@@ -88,6 +89,9 @@ choice criteria. Candidate end deltas reconstruct against the current state; kee
 every risk flag explicit.
 SMB metatiles 0x5f/0x60 are hidden blocks, not solid landing surfaces before
 activation. Expose them separately as RAM assistance; do not call them visible.
+Platform skills use local geometry and must retain exact-input replay parity.
+Report completed activation/landing from actual simulated states, not intentions;
+short action prefixes must not inherit a full maneuver's completion claims.
 Optional guide phases can match area, swimming and maze_pass, and request a
 minimum_search_tier (0..2). Log such external assistance and keep local guides ignored.
 Room-scoped guides may declare initial_room, rooms and phase.room/next_room.
